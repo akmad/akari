@@ -341,6 +341,8 @@ func toolBodyFields(agent Agent, line []byte) []bodyField {
 		return codexBodyFields(e)
 	case AgentPi:
 		return piBodyFields(e)
+	case AgentOpencode:
+		return opencodeBodyFields(e)
 	default:
 		return nil
 	}
@@ -509,6 +511,64 @@ func imageField(v gjson.Result) (bodyField, bool) {
 		media:   imageMediaType(imageHead(s)),
 		kind:    bodyKindAttachment,
 	}, true
+}
+
+// opencodeBodyFields enumerates the bodies on an OpenCode part line. It is the
+// buffered oracle locateOpencode must match exactly: the same values, in the same
+// source order, canonicalizing to the same bytes.
+//
+// Everything liftable hangs off a part line. A tool part carries its input and,
+// because OpenCode resolves a call in place rather than in a later message, its
+// result on the same line; a file part carries a pasted image as a data URI. The
+// message line holds only metadata and token counts, and the session header only
+// scalars, so neither contributes.
+func opencodeBodyFields(e gjson.Result) []bodyField {
+	if e.Get("type").String() != "part" {
+		return nil
+	}
+	d := e.Get("data")
+	switch d.Get("type").String() {
+	case "tool":
+		var fields []bodyField
+		input := d.Get("state.input")
+		if f, ok := rawField(input, input.Raw, "application/json", bodyKindInput); ok {
+			fields = append(fields, f)
+		}
+		if body, ok := opencodeResultBody(d); ok {
+			c, media := bodyContent(body)
+			if f, ok := rawField(body, c, media, bodyKindResult); ok {
+				fields = append(fields, f)
+			}
+		}
+		// OpenCode writes the state object's keys in lifecycle order, not schema
+		// order, so the result can precede the input on the line. Sorting by span
+		// keeps the rewrite cursor moving forward.
+		sort.SliceStable(fields, func(i, j int) bool { return fields[i].start < fields[j].start })
+		return fields
+	case "file":
+		if f, ok := imageField(d.Get("url")); ok {
+			return []bodyField{f}
+		}
+	}
+	return nil
+}
+
+// opencodeResultBody returns the value holding a tool call's result, matching the
+// reducer's choice in opencodeTool: a completed call's output, a failed call's
+// state.error in place of the output it never produced, and nothing for a call
+// that has not finished (which the client never uploads, but a hand-written
+// transcript can contain).
+func opencodeResultBody(d gjson.Result) (gjson.Result, bool) {
+	switch d.Get("state.status").String() {
+	case "completed":
+		return d.Get("state.output"), true
+	case "error":
+		if out := d.Get("state.output"); out.Exists() {
+			return out, true
+		}
+		return d.Get("state.error"), true
+	}
+	return gjson.Result{}, false
 }
 
 func piBodyFields(e gjson.Result) []bodyField {

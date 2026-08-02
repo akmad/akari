@@ -154,6 +154,7 @@ func TestExtractionParity(t *testing.T) {
 		{"claude", AgentClaude, loadFixture(t, "claude.jsonl")},
 		{"codex", AgentCodex, loadFixture(t, "codex.jsonl")},
 		{"pi", AgentPi, loadFixture(t, "pi.jsonl")},
+		{"opencode", AgentOpencode, loadFixture(t, "opencode.jsonl")},
 		{"claude-image", AgentClaude, claudeImageTranscript()},
 		{"codex-image", AgentCodex, codexImageTranscript()},
 	}
@@ -181,6 +182,7 @@ func TestRoundTripProjection(t *testing.T) {
 		{"claude", AgentClaude, loadFixture(t, "claude.jsonl")},
 		{"codex", AgentCodex, loadFixture(t, "codex.jsonl")},
 		{"pi", AgentPi, loadFixture(t, "pi.jsonl")},
+		{"opencode", AgentOpencode, loadFixture(t, "opencode.jsonl")},
 		{"claude-image", AgentClaude, claudeImageTranscript()},
 		{"codex-image", AgentCodex, codexImageTranscript()},
 	}

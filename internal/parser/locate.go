@@ -72,6 +72,8 @@ func LocateToolBodies(ctx context.Context, agent Agent, f io.ReaderAt, lineOff, 
 		return locateCodex(src, emit)
 	case AgentPi:
 		return locatePi(src, emit)
+	case AgentOpencode:
+		return locateOpencode(src, emit)
 	default:
 		return nil
 	}
@@ -315,6 +317,102 @@ func locatePi(s *lineSource, emit func(BodyLocation) error) error {
 		return s.locateSingleResult([]Step{Key("message"), Key("content")}, emit)
 	}
 	return nil
+}
+
+// locateOpencode finds the liftable bodies on an OpenCode part line: a tool
+// part's input and its already-resolved result, and the base64 image a file part
+// carries. It is the streaming twin of opencodeBodyFields, and the two must agree
+// exactly on which bytes are bodies (see TestLocateOpencodeBodies).
+//
+// Everything an OpenCode session lifts hangs off a part line: the message line
+// carries only the turn's metadata and token counts, and the session header is a
+// handful of scalars, so neither has a body worth streaming.
+func locateOpencode(s *lineSource, emit func(BodyLocation) error) error {
+	typ, err := s.topType(Key("type"))
+	if err != nil || typ != "part" {
+		return err
+	}
+	ptype, err := s.unquotedAt([]Step{Key("data"), Key("type")})
+	if err != nil {
+		return err
+	}
+	switch ptype {
+	case "tool":
+		return s.locateOpencodeTool(emit)
+	case "file":
+		// A pasted image rides as a data URI; lift it as a binary attachment so the
+		// transcript stays small and the image is stored decoded.
+		return s.locateImage([]Step{Key("data"), Key("url")}, emit)
+	}
+	return nil
+}
+
+// locateOpencodeTool emits a tool part's input and result in source byte order.
+//
+// The order has to come from the spans rather than from the schema: OpenCode
+// writes the state object's keys in whatever order the tool's lifecycle produced
+// them (a completed call leads with status, a failed one with its title and
+// metadata), and RewriteLine splices spans with a forward-only cursor, so an
+// out-of-order emission would silently drop a body.
+//
+// Which value is the result mirrors the reducer exactly (see opencodeTool): a
+// completed call's output, a failed call's output if it somehow has one and its
+// state.error otherwise, and nothing at all for a call that has not finished.
+func (s *lineSource) locateOpencodeTool(emit func(BodyLocation) error) error {
+	status, err := s.unquotedAt([]Step{Key("data"), Key("state"), Key("status")})
+	if err != nil {
+		return err
+	}
+	state := func(k string) []Step { return []Step{Key("data"), Key("state"), Key(k)} }
+	spans, err := s.locate([][]Step{state("input"), state("output"), state("error")})
+	if err != nil {
+		return err
+	}
+
+	var locs []BodyLocation
+	if sp, ok := spans[0]; ok && sp.End > sp.Start {
+		loc := BodyLocation{Span: sp, Kind: BodyRaw, Media: "application/json"}
+		if loc.FilePath, loc.Detail, err = s.inputProjections(sp, BodyRaw, "application/json"); err != nil {
+			return err
+		}
+		locs = append(locs, loc)
+	}
+	if sp, ok := opencodeResultSpan(status, spans); ok && sp.End > sp.Start {
+		loc, ok, err := s.classifyResult(sp)
+		if err != nil {
+			return err
+		}
+		if ok {
+			locs = append(locs, loc)
+		}
+	}
+	if len(locs) == 2 && locs[1].Span.Start < locs[0].Span.Start {
+		locs[0], locs[1] = locs[1], locs[0]
+	}
+	for _, loc := range locs {
+		if err := emit(loc); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// opencodeResultSpan picks the located span that holds a tool call's result,
+// given its status. Index 1 is state.output and index 2 is state.error, matching
+// the paths locateOpencodeTool registers.
+func opencodeResultSpan(status string, spans map[int]ValueSpan) (ValueSpan, bool) {
+	switch status {
+	case "completed":
+		sp, ok := spans[1]
+		return sp, ok
+	case "error":
+		if sp, ok := spans[1]; ok {
+			return sp, true
+		}
+		sp, ok := spans[2]
+		return sp, ok
+	}
+	return ValueSpan{}, false
 }
 
 // locateCodex finds every liftable Codex body in source order: tool inputs
