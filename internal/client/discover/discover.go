@@ -72,7 +72,7 @@ func (e Excluder) ExcludedDir(path string) bool {
 // workflow files (which all carry their parent's sessionId inside) avoid
 // colliding on a single source id.
 type File struct {
-	Agent string // claude | codex | pi
+	Agent string // claude | codex | pi | opencode
 	Root  string
 	Path  string
 }
@@ -130,10 +130,41 @@ func Roots(cfg config.Client, env func(string) string, home string) []Root {
 		roots = append(roots, Root{Agent: "grok", Dir: filepath.Join(home, ".grok", "sessions"), Optional: true})
 	}
 
+	// OpenCode has no session directory of its own: it keeps everything in a
+	// SQLite database, and internal/client/opencode renders one JSONL transcript
+	// per session into this cache before each discovery pass. The root is Optional
+	// like the other built-ins, so a machine without OpenCode (and therefore
+	// without the cache) is silently skipped.
+	if dir, err := OpencodeCacheDir(env, os.UserCacheDir); err == nil {
+		roots = append(roots, Root{Agent: "opencode", Dir: dir, Optional: true})
+	}
+
 	for _, r := range cfg.ExtraRoots {
 		roots = append(roots, Root{Agent: r.Agent, Dir: r.Path, FollowRootLink: r.FollowRootLink})
 	}
 	return roots
+}
+
+// OpencodeCacheEnvVar overrides where the materialized OpenCode transcripts live.
+const OpencodeCacheEnvVar = "AKARI_OPENCODE_CACHE_DIR"
+
+// OpencodeCacheDir returns the directory the OpenCode materializer writes to and
+// this package walks. It lives here, beside the other roots, so the writer and
+// the reader cannot disagree about the location.
+//
+// It is under the user's cache directory rather than beside OpenCode's own data
+// for two reasons: OpenCode's uninstaller removes its entire data tree, which
+// would take the transcripts with it, and "cache" is the honest description of
+// something regenerable from the database at any time.
+func OpencodeCacheDir(env func(string) string, userCacheDir func() (string, error)) (string, error) {
+	if dir := strings.TrimSpace(env(OpencodeCacheEnvVar)); dir != "" {
+		return dir, nil
+	}
+	base, err := userCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("locate user cache dir: %w", err)
+	}
+	return filepath.Join(base, "akari", "opencode"), nil
 }
 
 // Error reports every root or entry that could not be traversed safely. Discover
@@ -167,10 +198,10 @@ func ErrorCount(err error) int {
 // Matches reports whether a filename is a session file for the given agent.
 // Codex files are named rollout-*.jsonl; Grok keeps several JSONL files per
 // session directory, of which updates.jsonl is the session record; Claude, pi,
-// and Cursor use any *.jsonl. This is only a name gate: every agent's files are
-// further validated by a positive session-header signature at resolve time (see
-// resolve.sessionSignature), which is what keeps unrelated *.jsonl under a
-// custom extra_root from being ingested.
+// Cursor, and the materialized OpenCode transcripts use any *.jsonl. This is only
+// a name gate: every agent's files are further validated by a positive
+// session-header signature at resolve time (see resolve.sessionSignature), which
+// is what keeps unrelated *.jsonl under a custom extra_root from being ingested.
 func Matches(agent, name string) bool {
 	if !strings.HasSuffix(name, ".jsonl") {
 		return false

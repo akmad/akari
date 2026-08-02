@@ -670,6 +670,11 @@ func sessionSignature(agent string, e gjson.Result) bool {
 	case "grok":
 		// Every updates.jsonl line is an ACP session update wrapping the session id.
 		return e.Get("params.sessionId").Exists() && e.Get("params.update.sessionUpdate").Exists()
+	case "opencode":
+		// The materializer always writes the header first and always gives it an id,
+		// so requiring both is a tight signature: an unrelated *.jsonl that happened
+		// to land in the cache directory does not resolve as a session.
+		return e.Get("type").String() == "session" && e.Get("id").Exists()
 	}
 	return false
 }
@@ -715,6 +720,16 @@ func applyHeaderLine(agent string, e gjson.Result, h *Header) {
 		}
 		// cwd is not in the file; the session directory's name encodes it (see
 		// grokPathHeader).
+	case "opencode":
+		// OpenCode names the working directory "directory", and its session id is
+		// unique per session across the whole database, so it stands as the source
+		// id with no path-derived disambiguation (the Claude case).
+		if v := e.Get("directory").String(); v != "" {
+			h.Cwd = v
+		}
+		if v := e.Get("id").String(); v != "" {
+			h.sessionID = v
+		}
 	}
 }
 

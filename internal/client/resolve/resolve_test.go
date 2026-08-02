@@ -135,6 +135,10 @@ func TestPeekHeaderRejectsNonSession(t *testing.T) {
 		// pi lines that are neither a session header (no id/cwd) nor a typed message.
 		{"pi", "n1.jsonl", `{"type":"session"}` + "\n"},
 		{"pi", "n2.jsonl", `{"type":"tool","output":"hello","cwd":"/x"}` + "\n"},
+		// An OpenCode transcript always opens with an identified session header, so
+		// an id-less header or a stray part line in the cache directory is not one.
+		{"opencode", "o1.jsonl", `{"type":"session","directory":"/x"}` + "\n"},
+		{"opencode", "o2.jsonl", `{"type":"part","id":"prt_1","messageID":"msg_1","data":{}}` + "\n"},
 		// Valid JSON that carries no recognizable shape at all.
 		{"claude", "n3.jsonl", `{"hello":"world"}` + "\n{}\n"},
 	}
@@ -161,6 +165,9 @@ func TestPeekHeaderAcceptsRealSessions(t *testing.T) {
 		// A pi file that opens with a typed message line (a tail with no header) still
 		// reads as a session; it just has no cwd, so it resolves as orphaned later.
 		{"pi", "p2.jsonl", `{"type":"message","message":{"role":"user","content":"hi"}}` + "\n", ""},
+		// OpenCode names the working directory "directory"; its own session id is
+		// unique per session, so it stands as the source id unmodified.
+		{"opencode", "ses_ada1.jsonl", `{"type":"session","id":"ses_ada1","directory":"/d"}` + "\n", "/d"},
 	}
 	for _, c := range cases {
 		path := writeFile(t, dir, c.name, c.content)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jssblck/akari/internal/client/discover"
 	"github.com/jssblck/akari/internal/config"
 	"github.com/jssblck/akari/internal/server/auth"
 	"github.com/jssblck/akari/internal/server/httpapi"
@@ -283,6 +284,10 @@ func isolateDiscoveryRoots(t *testing.T) string {
 	t.Setenv("CODEX_SESSIONS_DIR", t.TempDir())
 	t.Setenv("PI_DIR", piHome)
 	t.Setenv("HOME", t.TempDir())
+	// OpenCode's root is a cache akari itself writes, so isolating it takes the
+	// cache override; without it these tests would discover the developer's own
+	// materialized OpenCode sessions.
+	t.Setenv(discover.OpencodeCacheEnvVar, t.TempDir())
 	return claude
 }
 
