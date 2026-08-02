@@ -13,10 +13,12 @@
 -- what an existing claude, codex, or pi session reduces to.
 DO $$
 DECLARE
-  constraint_name text;
+  -- Prefixed so PL/pgSQL can never resolve the name against a catalog column in
+  -- the query below (an ambiguous identifier is an error, not a silent guess).
+  v_conname text;
 BEGIN
   SELECT con.conname
-    INTO constraint_name
+    INTO v_conname
     FROM pg_constraint con
     JOIN pg_class rel ON rel.oid = con.conrelid
     JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
@@ -27,8 +29,8 @@ BEGIN
      AND pg_get_constraintdef(con.oid) ILIKE '%claude%'
    LIMIT 1;
 
-  IF constraint_name IS NOT NULL THEN
-    EXECUTE format('ALTER TABLE sessions DROP CONSTRAINT %I', constraint_name);
+  IF v_conname IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE sessions DROP CONSTRAINT %I', v_conname);
   END IF;
 
   ALTER TABLE sessions
