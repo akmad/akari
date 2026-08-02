@@ -772,3 +772,128 @@ func TestParseGrokTrailingPrompt(t *testing.T) {
 		t.Fatalf("messages = %+v", s.Messages)
 	}
 }
+
+// TestParseOpencode covers the synthetic OpenCode transcript the client
+// materializes from OpenCode's SQLite database: a session header carrying the
+// identity scalars, a user turn whose prompt and pasted image arrive as separate
+// part lines, and an assistant turn folding reasoning, three tool parts and its
+// answer into one message row. It mirrors TestParsePi, plus the pieces only
+// OpenCode has (millisecond timestamps, a result already resolved on the call
+// part, and a turn whose API request failed).
+func TestParseOpencode(t *testing.T) {
+	s, err := Parse(AgentOpencode, loadFixture(t, "opencode.jsonl"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if s.Cwd != "/home/ada/code/ledger" {
+		t.Errorf("cwd = %q", s.Cwd)
+	}
+	// OpenCode records no git branch anywhere in its schema, so the reducer must
+	// leave it empty rather than infer one.
+	if s.GitBranch != "" {
+		t.Errorf("git branch = %q, want empty", s.GitBranch)
+	}
+	// Epoch-millisecond timestamps must convert, not fall back to the zero time.
+	if got, want := s.StartedAt.UTC().Format(time.RFC3339Nano), "2026-08-01T15:35:59.781Z"; got != want {
+		t.Errorf("started at = %s, want %s", got, want)
+	}
+
+	if len(s.Messages) != 3 {
+		t.Fatalf("messages = %d, want 3", len(s.Messages))
+	}
+	if s.Messages[0].Role != RoleUser || s.Messages[0].Content != "Why does checkout drop the coupon?" {
+		t.Errorf("message 0 = %+v", s.Messages[0])
+	}
+	a := s.Messages[1]
+	if a.Role != RoleAssistant || a.Content != "The coupon is dropped before applyCoupon runs." {
+		t.Errorf("message 1 content = %q", a.Content)
+	}
+	if a.Model != "gpt-5.6-sol" {
+		t.Errorf("message 1 model = %q, want the bare id the pricing table keys on", a.Model)
+	}
+	if !a.HasToolUse {
+		t.Errorf("message 1 should have tool use")
+	}
+	// The reasoning plaintext is a one-line heading, but the encrypted blob beside
+	// it is the reasoning-volume proxy, so the weight is the blob's length.
+	if !a.HasThinking || a.ThinkingText != "**Reading the coupon path**" {
+		t.Errorf("message 1 thinking = %q (has=%v)", a.ThinkingText, a.HasThinking)
+	}
+	if want := len("c2hlbGxlZCByZWFzb25pbmcgYmxvYiBmb3IgdGhlIGZpeHR1cmU="); a.ThinkingBytes != want {
+		t.Errorf("message 1 thinking bytes = %d, want the encrypted payload length %d", a.ThinkingBytes, want)
+	}
+
+	if len(s.ToolCalls) != 3 {
+		t.Fatalf("tool calls = %d, want 3", len(s.ToolCalls))
+	}
+	read := s.ToolCalls[0]
+	if read.ToolName != "read" || read.Category != "read" || read.FilePath != "/home/ada/code/ledger/checkout.go" {
+		t.Errorf("tool call 0 = %+v", read)
+	}
+	if read.ResultBody != "package ledger\n\nfunc applyCoupon() {}\n" || read.ResultStatus != "ok" {
+		t.Errorf("tool result 0 = %q (%s)", read.ResultBody, read.ResultStatus)
+	}
+	if read.ResultMediaType != "text/plain" || read.ResultBytes != len(read.ResultBody) {
+		t.Errorf("tool result 0 size = %d (%s)", read.ResultBytes, read.ResultMediaType)
+	}
+	if s.ToolCalls[1].Detail != "go test ./ledger -run Coupon" {
+		t.Errorf("tool call 1 detail = %q", s.ToolCalls[1].Detail)
+	}
+	// A failed call carries no output; its state.error is what the model saw in the
+	// output's place, so it becomes the recorded body with an error status.
+	fail := s.ToolCalls[2]
+	if fail.ResultStatus != "error" || fail.ResultBody != "File not found: /home/ada/code/ledger" {
+		t.Errorf("tool call 2 result = %q (%s)", fail.ResultBody, fail.ResultStatus)
+	}
+
+	// Usage rides on the message, not on the step-finish part that repeats it, so
+	// the assistant turn contributes exactly one usage row.
+	if len(s.UsageEvent) != 2 {
+		t.Fatalf("usage events = %d, want 2", len(s.UsageEvent))
+	}
+	u := s.UsageEvent[0]
+	if u.Input != 1200 || u.Output != 120 || u.Reasoning != 200 || u.CacheRead != 900 || u.CacheWrite != 64 {
+		t.Errorf("usage = %+v", u)
+	}
+	if u.Model != "gpt-5.6-sol" || u.DedupKey != "msg_ada002" {
+		t.Errorf("usage identity = %+v", u)
+	}
+
+	// The pasted image is lifted out of the transcript as a binary attachment on
+	// the user turn that carried it.
+	if len(s.Attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(s.Attachments))
+	}
+	if att := s.Attachments[0]; att.MessageOrdinal != 0 || att.MediaType != "image/png" || att.Filename != "clipboard.png" {
+		t.Errorf("attachment = %+v", att)
+	}
+
+	if s.Identity.CustomTitle != "Trace the checkout regression" || s.Identity.Slug != "lucid-lantern" {
+		t.Errorf("identity title/slug = %+v", s.Identity)
+	}
+	if s.Identity.SubagentName != "explore" || s.Identity.ReasoningEffort != "high" {
+		t.Errorf("identity agent/effort = %+v", s.Identity)
+	}
+	if s.Identity.ParentSourceID != "ses_hop0000000000000000000001" {
+		t.Errorf("identity parent = %q", s.Identity.ParentSourceID)
+	}
+
+	// Two completed turns yield two turn_end events; the second turn's provider
+	// error yields an api_error beside it.
+	var turnEnds, apiErrors int
+	for _, ev := range s.Events {
+		switch ev.Kind {
+		case EventTurnEnd:
+			turnEnds++
+		case EventAPIError:
+			apiErrors++
+			if ev.AttrsJSON != `{"message":"upstream timed out"}` {
+				t.Errorf("api_error attrs = %s", ev.AttrsJSON)
+			}
+		}
+	}
+	if turnEnds != 2 || apiErrors != 1 {
+		t.Errorf("events: turn_end=%d api_error=%d, want 2/1 (%+v)", turnEnds, apiErrors, s.Events)
+	}
+}

@@ -67,12 +67,16 @@ const (
 // thoughts). Codex's and Grok's exact per-turn counts are used directly where present, so
 // their factors only cover a turn that somehow logged a trace but no token count. Cursor
 // has no entry on purpose: its transcript never separates reasoning from answer text, so
-// a Cursor turn records no thinking bytes for a divisor to act on.
+// a Cursor turn records no thinking bytes for a divisor to act on. OpenCode measures the
+// same OpenAI reasoningEncryptedContent blob Codex does (its reasoning parts carry the
+// provider's encrypted payload beside a one-line plaintext heading), so it shares Codex's
+// 14.2; like Codex it reports an exact per-turn count, which wins where present.
 var thinkingBytesPerToken = map[string]float64{
-	"claude": 10.7,
-	"codex":  14.2,
-	"pi":     4.0,
-	"grok":   4.0,
+	"claude":   10.7,
+	"codex":    14.2,
+	"pi":       4.0,
+	"grok":     4.0,
+	"opencode": 14.2,
 }
 
 // ThinkingCalibratedAgents returns the agents with a measured bytes-per-token

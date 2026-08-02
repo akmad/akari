@@ -777,7 +777,7 @@ CREATE TABLE sessions (
   id                BIGSERIAL PRIMARY KEY,
   user_id           BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   project_id        BIGINT NOT NULL REFERENCES projects(id),
-  agent             TEXT NOT NULL,        -- claude | codex | pi
+  agent             TEXT NOT NULL,        -- claude | codex | pi | opencode
   source_session_id TEXT NOT NULL,
   parent_session_id BIGINT REFERENCES sessions(id) ON DELETE SET NULL,
   relationship_type TEXT NOT NULL DEFAULT '',  -- '' | subagent | continuation
@@ -1579,7 +1579,7 @@ cmd/
   akari/            # client binary
   akari-server/     # server binary (plus sweep, reparse, dev-seed subcommands)
 internal/
-  parser/           # claude, codex, pi, cursor, grok parsers + normalized types (shared)
+  parser/           # claude, codex, pi, cursor, grok, opencode parsers + normalized types (shared)
   casenc/           # client-side CAS body encoder (zstd policy, deterministic)
   gitremote/        # remote URL canonicalization
   pricing/          # compiled-in rate table + cost computation

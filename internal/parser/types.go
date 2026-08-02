@@ -15,12 +15,17 @@ const (
 	AgentPi     Agent = "pi"
 	AgentCursor Agent = "cursor"
 	AgentGrok   Agent = "grok"
+	// AgentOpencode is OpenCode. Alone among the agents it keeps its transcripts
+	// in a SQLite database rather than on disk, so the client materializes one
+	// deterministic JSONL file per session and the format this parser reads is
+	// that materialization (see internal/client/opencode and opencode.go).
+	AgentOpencode Agent = "opencode"
 )
 
 // Agents lists every supported format. Validation outside the parser (the announce
 // endpoint) derives from it, so this enum stays the one owner of "which agent
 // formats exist" and a format the parser handles is never rejected at announce.
-var Agents = []Agent{AgentClaude, AgentCodex, AgentPi, AgentCursor, AgentGrok}
+var Agents = []Agent{AgentClaude, AgentCodex, AgentPi, AgentCursor, AgentGrok, AgentOpencode}
 
 // Session is the parsed projection of one session file.
 type Session struct {

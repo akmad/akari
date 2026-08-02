@@ -1,0 +1,199 @@
+{
+  "Messages": [
+    {
+      "Ordinal": 0,
+      "Role": "user",
+      "Content": "Why does checkout drop the coupon?",
+      "ThinkingText": "",
+      "ThinkingBytes": 0,
+      "Model": "",
+      "HasThinking": false,
+      "HasToolUse": false,
+      "Timestamp": "2026-08-01T15:35:59.79Z"
+    },
+    {
+      "Ordinal": 1,
+      "Role": "assistant",
+      "Content": "The coupon is dropped before applyCoupon runs.",
+      "ThinkingText": "**Reading the coupon path**",
+      "ThinkingBytes": 52,
+      "Model": "gpt-5.6-sol",
+      "HasThinking": true,
+      "HasToolUse": true,
+      "Timestamp": "2026-08-01T15:35:59.8Z"
+    },
+    {
+      "Ordinal": 2,
+      "Role": "assistant",
+      "Content": "",
+      "ThinkingText": "",
+      "ThinkingBytes": 0,
+      "Model": "gpt-5.6-sol",
+      "HasThinking": false,
+      "HasToolUse": false,
+      "Timestamp": "2026-08-01T15:36:02.4Z"
+    }
+  ],
+  "ToolCalls": [
+    {
+      "MessageOrdinal": 1,
+      "CallIndex": 0,
+      "ToolName": "read",
+      "Category": "read",
+      "FilePath": "/home/ada/code/ledger/checkout.go",
+      "Detail": "",
+      "InputBody": "{\"file_path\":\"/home/ada/code/ledger/checkout.go\"}",
+      "InputSHA256": "",
+      "InputBytes": 49,
+      "InputMediaType": "application/json",
+      "CallUID": "call_ada005",
+      "AttributionAgent": "",
+      "AttributionSkill": "",
+      "AttributionPlugin": ""
+    },
+    {
+      "MessageOrdinal": 1,
+      "CallIndex": 1,
+      "ToolName": "bash",
+      "Category": "bash",
+      "FilePath": "",
+      "Detail": "go test ./ledger -run Coupon",
+      "InputBody": "{\"command\":\"go test ./ledger -run Coupon\",\"description\":\"run the coupon tests\"}",
+      "InputSHA256": "",
+      "InputBytes": 79,
+      "InputMediaType": "application/json",
+      "CallUID": "call_ada006",
+      "AttributionAgent": "",
+      "AttributionSkill": "",
+      "AttributionPlugin": ""
+    },
+    {
+      "MessageOrdinal": 1,
+      "CallIndex": 2,
+      "ToolName": "grep",
+      "Category": "search",
+      "FilePath": "",
+      "Detail": "coupon",
+      "InputBody": "{\"pattern\":\"coupon\",\"path\":\"/home/ada/code/ledger\"}",
+      "InputSHA256": "",
+      "InputBytes": 51,
+      "InputMediaType": "application/json",
+      "CallUID": "call_ada007",
+      "AttributionAgent": "",
+      "AttributionSkill": "",
+      "AttributionPlugin": ""
+    }
+  ],
+  "ToolResults": [
+    {
+      "CallUID": "call_ada005",
+      "Body": "package ledger\n\nfunc applyCoupon() {}\n",
+      "BodySHA256": "",
+      "Bytes": 38,
+      "MediaType": "text/plain",
+      "Status": "ok",
+      "StructBody": "",
+      "StructSHA256": "",
+      "StructBytes": 0,
+      "StructMediaType": ""
+    },
+    {
+      "CallUID": "call_ada006",
+      "Body": "ok  \tledger\t0.412s\n\n[output truncated after 2 lines; full output at ~/.local/share/opencode/tool-output/call_ada006]",
+      "BodySHA256": "",
+      "Bytes": 116,
+      "MediaType": "text/plain",
+      "Status": "ok",
+      "StructBody": "",
+      "StructSHA256": "",
+      "StructBytes": 0,
+      "StructMediaType": ""
+    },
+    {
+      "CallUID": "call_ada007",
+      "Body": "File not found: /home/ada/code/ledger",
+      "BodySHA256": "",
+      "Bytes": 37,
+      "MediaType": "text/plain",
+      "Status": "error",
+      "StructBody": "",
+      "StructSHA256": "",
+      "StructBytes": 0,
+      "StructMediaType": ""
+    }
+  ],
+  "Usage": [
+    {
+      "MessageOrdinal": 1,
+      "Model": "gpt-5.6-sol",
+      "Input": 1200,
+      "Output": 120,
+      "CacheWrite": 64,
+      "CacheRead": 900,
+      "Reasoning": 200,
+      "CostUSD": 0.01045,
+      "OccurredAt": "2026-08-01T15:35:59.8Z",
+      "DedupKey": "msg_ada002",
+      "SourceOffset": 1047,
+      "SourceIndex": 0
+    },
+    {
+      "MessageOrdinal": 2,
+      "Model": "gpt-5.6-sol",
+      "Input": 0,
+      "Output": 0,
+      "CacheWrite": 0,
+      "CacheRead": 0,
+      "Reasoning": 0,
+      "CostUSD": 0,
+      "OccurredAt": "2026-08-01T15:36:02.4Z",
+      "DedupKey": "msg_ada003",
+      "SourceOffset": 3762,
+      "SourceIndex": 0
+    }
+  ],
+  "Attachments": [
+    {
+      "MessageOrdinal": 0,
+      "SHA256": "",
+      "Body": "\ufffdPNG\r\n\u001a\nada lovelace pixels ada lovelace pixels ada lovelace pixels ada lovelace pixels ",
+      "Bytes": 88,
+      "MediaType": "image/png",
+      "Filename": "clipboard.png"
+    }
+  ],
+  "Fallbacks": null,
+  "Events": [
+    {
+      "MessageOrdinal": 1,
+      "Kind": "turn_end",
+      "AttrsJSON": "{\"duration_ms\":2500}",
+      "OccurredAt": "2026-08-01T15:36:02.3Z"
+    },
+    {
+      "MessageOrdinal": 2,
+      "Kind": "turn_end",
+      "AttrsJSON": "{\"duration_ms\":120}",
+      "OccurredAt": "2026-08-01T15:36:02.52Z"
+    },
+    {
+      "MessageOrdinal": 2,
+      "Kind": "api_error",
+      "AttrsJSON": "{\"message\":\"upstream timed out\"}",
+      "OccurredAt": "2026-08-01T15:36:02.4Z"
+    }
+  ],
+  "Identity": {
+    "CustomTitle": "Trace the checkout regression",
+    "Slug": "lucid-lantern",
+    "PermissionMode": "",
+    "ReasoningEffort": "high",
+    "SubagentName": "explore",
+    "PRNumber": 0,
+    "PRURL": "",
+    "PRRepo": "",
+    "ParentSourceID": "ses_hop0000000000000000000001"
+  },
+  "Started": "2026-08-01T15:35:59.781Z",
+  "Ended": "2026-08-01T15:36:02.4Z"
+}

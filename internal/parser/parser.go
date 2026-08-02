@@ -34,6 +34,17 @@ func toolFilePath(input gjson.Result) string {
 	return ""
 }
 
+// parseMillis converts an epoch-milliseconds integer to a UTC time. OpenCode
+// stores every timestamp as a millisecond integer rather than an RFC3339 string,
+// so it needs its own converter; a non-positive value (absent, or a zero column)
+// yields the zero time exactly as an unparseable string does in parseTime.
+func parseMillis(ms int64) time.Time {
+	if ms <= 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(ms).UTC()
+}
+
 // toolCategory maps a raw tool name to a coarse category used for filtering and
 // stats. Unknown tools get an empty category rather than a guess.
 func toolCategory(name string) string {
