@@ -198,7 +198,7 @@ The keys:
   overrides it per run.
 - **`extra_roots`** (optional): additional discovery roots, each an
   `{ agent, path, follow_root_link }` entry where `agent` is `claude`, `codex`,
-  or `pi` and `follow_root_link` (optional, default `false`) opts the root into
+  `pi`, or `opencode` and `follow_root_link` (optional, default `false`) opts the root into
   resolving a symlink or, on Windows, a directory junction at `path` itself
   before walking it; see [Discovery](#discovery) below for why that is opt-in.
   Use these when your sessions live somewhere other than the standard location.
@@ -229,8 +229,10 @@ The sessions still aggregate by project, user, and agent exactly as before; only
 the machine label changes, so an ephemeral fleet reporting as `ci` shows up as one
 machine rather than polluting the rail.
 
-`AKARI_MACHINE` is the only environment variable akari itself defines. The client
-also honors each agent's own root override for discovery (see below).
+Besides `AKARI_MACHINE`, akari defines only the two OpenCode knobs described under
+[Discovery](#discovery) (`AKARI_OPENCODE_DB` and `AKARI_OPENCODE_CACHE_DIR`), which
+exist because OpenCode has no session directory of its own. The client also honors
+each agent's own root override for discovery (see below).
 
 ## Discovery
 
@@ -242,9 +244,49 @@ plus any `extra_roots` you configured:
 | Claude Code | `~/.claude/projects` | `CLAUDE_PROJECTS_DIR` |
 | Codex | `~/.codex/sessions` and `~/.codex/archived_sessions` | `CODEX_SESSIONS_DIR` |
 | pi | `~/.pi/agent/sessions` | `PI_DIR` (sessions at `$PI_DIR/agent/sessions`) |
+| OpenCode | a cache akari writes (see below) | `AKARI_OPENCODE_DB`, `AKARI_OPENCODE_CACHE_DIR` |
+
+### OpenCode
+
+OpenCode is the one agent that writes no session files. Everything lives in a
+single SQLite database at `~/.local/share/opencode/opencode.db` (or under
+`$XDG_DATA_HOME`), so before every discovery pass the client renders each session
+out of that database into one ordinary JSONL transcript per session, and discovers
+those. From there OpenCode sessions travel the same path as every other agent's.
+
+The database is opened strictly read-only and is never written, never
+checkpointed, and never opened in SQLite's `immutable` mode, which would be unsafe
+against a running OpenCode. The tables holding credentials are never read at all.
+
+The transcripts are written to `<user cache dir>/akari/opencode/`: on macOS
+`~/Library/Caches/akari/opencode`, on Linux `~/.cache/akari/opencode`. They are
+deliberately *not* kept beside OpenCode's own data, whose entire tree OpenCode's
+uninstaller removes. The directory is a cache in the full sense: you can delete it
+at any time and the next run rebuilds it, and transcripts for sessions that have
+left the database are pruned automatically.
+
+Two environment variables adjust this:
+
+- **`AKARI_OPENCODE_DB`** points at the database, for an install in a
+  non-standard location.
+- **`AKARI_OPENCODE_CACHE_DIR`** points at the transcript cache. Setting it moves
+  both the writing and the discovery, so the two cannot disagree.
+
+A turn that is still running is deliberately withheld until it settles, because
+its bytes are still being rewritten in place and publishing early would mean
+re-uploading the session once it finished. A brand-new session is withheld until its first
+assistant turn completes and OpenCode has generated its title, for the same
+reason. In practice this means the most recent turn of a session you are actively
+working in appears on the next sync after it finishes, not during.
+
+If OpenCode's internal schema ever changes in a way akari does not recognize, the
+whole root is skipped with a loud notice rather than producing a partial
+transcript. Should that happen, `opencode export <session-id>` remains available
+as a manual escape hatch; akari never invokes it for you.
 
 Missing built-in roots are skipped without error because an unused agent normally
-has no session directory. A missing path supplied through an agent override or
+has no session directory. The OpenCode root counts as built-in here: a machine
+without OpenCode has no cache directory and is skipped silently. A missing path supplied through an agent override or
 `extra_roots` is an error, as are permission failures and incomplete directory
 walks. `sync` and `--dry-run` process files found in complete portions of the scan,
 report the number of discovery errors in the final summary, and exit nonzero.

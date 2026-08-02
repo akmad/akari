@@ -246,12 +246,19 @@ func TestRoots(t *testing.T) {
 
 	// No env overrides: standard roots plus the configured extra roots. The
 	// second extra root's follow_root_link must carry through to Root.
+	// The OpenCode root is the machine's real cache location, since nothing in the
+	// default path derives from home.
+	cacheBase, err := os.UserCacheDir()
+	if err != nil {
+		t.Fatalf("user cache dir: %v", err)
+	}
 	roots := Roots(cfg, func(string) string { return "" }, home)
 	want := []Root{
 		{Agent: "claude", Dir: filepath.Join(home, ".claude", "projects"), Optional: true},
 		{Agent: "codex", Dir: filepath.Join(home, ".codex", "sessions"), Optional: true},
 		{Agent: "codex", Dir: filepath.Join(home, ".codex", "archived_sessions"), Optional: true},
 		{Agent: "pi", Dir: filepath.Join(home, ".pi", "agent", "sessions"), Optional: true},
+		{Agent: "opencode", Dir: filepath.Join(cacheBase, "akari", "opencode"), Optional: true},
 		{Agent: "pi", Dir: "/extra/pi"},
 		{Agent: "claude", Dir: "/mnt/linked-claude", FollowRootLink: true},
 	}
@@ -280,5 +287,37 @@ func TestRoots(t *testing.T) {
 	// PI_DIR points at the pi home; sessions live under agent/sessions.
 	if roots[2] != (Root{Agent: "pi", Dir: filepath.Join("/custom/pihome", "agent", "sessions")}) {
 		t.Errorf("pi override = %v", roots[2])
+	}
+
+	// OpenCode's transcripts are written by akari itself, so its override is
+	// akari's own rather than an agent-defined one.
+	env[OpencodeCacheEnvVar] = "/custom/opencode-cache"
+	roots = Roots(config.Client{}, func(k string) string { return env[k] }, home)
+	if want := (Root{Agent: "opencode", Dir: "/custom/opencode-cache", Optional: true}); roots[3] != want {
+		t.Errorf("opencode override = %v, want %v", roots[3], want)
+	}
+}
+
+// TestOpencodeCacheDir pins the location the materializer writes to and discovery
+// reads from. They must agree, so the rule lives in one function and is asserted
+// once.
+func TestOpencodeCacheDir(t *testing.T) {
+	dir, err := OpencodeCacheDir(func(string) string { return "" }, func() (string, error) { return "/cache", nil })
+	if err != nil {
+		t.Fatalf("default: %v", err)
+	}
+	if want := filepath.Join("/cache", "akari", "opencode"); dir != want {
+		t.Errorf("default = %q, want %q", dir, want)
+	}
+	// It must not sit under OpenCode's own data directory: OpenCode's uninstaller
+	// removes that whole tree.
+	if strings.Contains(dir, filepath.Join(".local", "share", "opencode")) {
+		t.Errorf("cache dir %q lives inside OpenCode's data tree", dir)
+	}
+
+	env := map[string]string{OpencodeCacheEnvVar: "  /elsewhere  "}
+	dir, err = OpencodeCacheDir(func(k string) string { return env[k] }, func() (string, error) { return "/cache", nil })
+	if err != nil || dir != "/elsewhere" {
+		t.Errorf("override = %q (%v), want /elsewhere", dir, err)
 	}
 }

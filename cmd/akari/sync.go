@@ -108,8 +108,12 @@ func runSync(ctx context.Context, args []string) error {
 	}
 	machine := config.ResolveMachine(cfg, os.Getenv, os.Hostname)
 
+	// OpenCode's sessions live in a SQLite database, not in files, so they have to
+	// be rendered into their cache root before the walk can see them.
+	opencodeNotices, opencodeErr := materializeOpencode(ctx)
+
 	files, discoveryNotices, discoveryErr := discover.Discover(discover.Roots(cfg, os.Getenv, home), discover.NewExcluder(cfg.Excludes))
-	for _, n := range discoveryNotices {
+	for _, n := range append(opencodeNotices, discoveryNotices...) {
 		fmt.Fprintln(os.Stderr, "notice: "+n)
 	}
 
@@ -162,7 +166,10 @@ func runSync(ctx context.Context, args []string) error {
 	if discoveryErr != nil {
 		discoveryErr = fmt.Errorf("discover sessions: %w", discoveryErr)
 	}
-	return errors.Join(discoveryErr, uploadErr)
+	if opencodeErr != nil {
+		opencodeErr = fmt.Errorf("materialize opencode sessions: %w", opencodeErr)
+	}
+	return errors.Join(opencodeErr, discoveryErr, uploadErr)
 }
 
 // outcome carries one file's finished work from a sync goroutine to the single

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jssblck/akari/internal/client/discover"
+	"github.com/jssblck/akari/internal/client/opencode"
 	"github.com/jssblck/akari/internal/client/resolve"
 	"github.com/jssblck/akari/internal/client/syncer"
 	"github.com/jssblck/akari/internal/client/upload"
@@ -162,6 +163,12 @@ func TestRunSyncReturnsDiscoveryFailuresInSyncAndDryRun(t *testing.T) {
 	t.Setenv("CLAUDE_PROJECTS_DIR", filepath.Join(dir, "missing-claude"))
 	t.Setenv("CODEX_SESSIONS_DIR", filepath.Join(dir, "missing-codex"))
 	t.Setenv("PI_DIR", filepath.Join(dir, "missing-pi"))
+	// Point the OpenCode inputs at nothing: a test must never read the
+	// developer's real OpenCode database, let alone materialize it. The root is
+	// Optional, so an absent cache is not one of the discovery failures counted
+	// below.
+	t.Setenv(opencode.DBEnvVar, filepath.Join(dir, "missing-opencode.db"))
+	t.Setenv(discover.OpencodeCacheEnvVar, filepath.Join(dir, "opencode-cache"))
 
 	for _, tc := range []struct {
 		name string

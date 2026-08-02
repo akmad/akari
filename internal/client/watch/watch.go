@@ -35,7 +35,19 @@ type Options struct {
 	// Excludes are glob patterns of paths to skip (see discover.Excluder). They
 	// keep an ignored location out of discovery, the poll, and event handling.
 	Excludes []string
-	Logf     func(string, ...any)
+	// PreDiscover runs immediately before every discovery pass and returns any
+	// non-fatal notices it produced, which are logged alongside discovery's own.
+	// It exists for an agent whose sessions are not files until something makes
+	// them files: OpenCode keeps its transcripts in a SQLite database, and the
+	// client renders them into a cache directory that is then walked as an
+	// ordinary root. Taking it as a callback keeps this package free of any
+	// per-agent knowledge (and of the SQLite driver). Nil means nothing to do.
+	//
+	// It is called on the discovery path only, never on the fsnotify or poll
+	// paths: the database is not watched, because its write-ahead log churns
+	// constantly and would fire on every keystroke of a live session.
+	PreDiscover func() []string
+	Logf        func(string, ...any)
 }
 
 func (o Options) withDefaults() Options {
@@ -348,8 +360,12 @@ func (w *Watcher) fileFor(path string) (discover.File, bool) {
 }
 
 func (w *Watcher) discover() []discover.File {
-	files, notices, err := discover.Discover(w.roots, w.ex)
-	w.logDiscoveryStatus(notices, err)
+	var notices []string
+	if w.opt.PreDiscover != nil {
+		notices = w.opt.PreDiscover()
+	}
+	files, discovered, err := discover.Discover(w.roots, w.ex)
+	w.logDiscoveryStatus(append(notices, discovered...), err)
 	return files
 }
 

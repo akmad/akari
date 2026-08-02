@@ -80,7 +80,19 @@ func runWatch(ctx context.Context, args []string) (runErr error) {
 	// settle window elapses, so it never finalizes eagerly.
 	sync := syncer.New(resolver, client, machine, false)
 
-	w := watch.New(roots, sync.SyncOne, watch.Options{Excludes: cfg.Excludes, Logf: logf})
+	// Every discovery pass re-renders the OpenCode database into its cache root
+	// first, so a session that grew since the last pass is on disk before the walk
+	// looks for it. The database itself is never watched: its write-ahead log
+	// churns on every token of a live session.
+	preDiscover := func() []string {
+		notices, err := materializeOpencode(ctx)
+		if err != nil {
+			notices = append(notices, "opencode: "+err.Error())
+		}
+		return notices
+	}
+
+	w := watch.New(roots, sync.SyncOne, watch.Options{Excludes: cfg.Excludes, PreDiscover: preDiscover, Logf: logf})
 	logf("akari watch: watching %d root(s); press Ctrl-C to stop", len(roots))
 
 	if err := w.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {

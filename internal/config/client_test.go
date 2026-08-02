@@ -211,7 +211,7 @@ path = "/sessions"
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadClient(path); err == nil || !strings.Contains(err.Error(), "must be claude, codex, or pi") {
+	if _, err := LoadClient(path); err == nil || !strings.Contains(err.Error(), "must be claude, codex, pi, or opencode") {
 		t.Fatalf("LoadClient invalid agent error = %v", err)
 	}
 }
@@ -238,5 +238,30 @@ func TestSaveDoesNotDestroyOnRewrite(t *testing.T) {
 		if e.Name() != "config.toml" {
 			t.Errorf("stray file left behind: %s", e.Name())
 		}
+	}
+}
+
+// TestLoadClientAcceptsOpencodeRoot covers the fourth agent in extra_roots. It is
+// a real configuration, not a curiosity: the OpenCode transcripts are rendered
+// into a cache directory, and a user who moves that directory points an extra
+// root at it.
+func TestLoadClientAcceptsOpencodeRoot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	raw := `server_url = "https://akari.example"
+token = "secret"
+
+[[extra_roots]]
+agent = "opencode"
+path = "/var/cache/akari/opencode"
+`
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadClient(path)
+	if err != nil {
+		t.Fatalf("LoadClient: %v", err)
+	}
+	if len(cfg.ExtraRoots) != 1 || cfg.ExtraRoots[0].Agent != "opencode" {
+		t.Errorf("extra roots = %+v", cfg.ExtraRoots)
 	}
 }
