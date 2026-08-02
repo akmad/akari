@@ -37,11 +37,12 @@ func perTurnTokensExpr(mAlias, mtuAlias, agentExpr string) string {
 // for an agent the map does not name.
 func agentDivisorExpr(agentExpr string) string {
 	return fmt.Sprintf(
-		`CASE %s WHEN 'claude' THEN %g WHEN 'codex' THEN %g WHEN 'pi' THEN %g ELSE %g END`,
+		`CASE %s WHEN 'claude' THEN %g WHEN 'codex' THEN %g WHEN 'pi' THEN %g WHEN 'opencode' THEN %g ELSE %g END`,
 		agentExpr,
 		quality.ThinkingBytesPerToken("claude"),
 		quality.ThinkingBytesPerToken("codex"),
 		quality.ThinkingBytesPerToken("pi"),
+		quality.ThinkingBytesPerToken("opencode"),
 		quality.ThinkingBytesPerToken(""),
 	)
 }

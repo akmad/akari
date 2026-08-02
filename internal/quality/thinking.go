@@ -63,11 +63,15 @@ const (
 // bytes per reasoning token, measured against the exact counts it also reports), and pi
 // keeps plaintext (~4 bytes per token, the usual English ratio). Codex's exact per-turn
 // count is used directly where present, so its factor only covers a Codex turn that
-// somehow logged a trace but no token count.
+// somehow logged a trace but no token count. OpenCode measures the same OpenAI
+// reasoningEncryptedContent blob Codex does (its reasoning parts carry the provider's
+// encrypted payload beside a one-line plaintext heading), so it shares Codex's 14.2;
+// like Codex it also reports an exact per-turn reasoning count, which wins where present.
 var thinkingBytesPerToken = map[string]float64{
-	"claude": 10.7,
-	"codex":  14.2,
-	"pi":     4.0,
+	"claude":   10.7,
+	"codex":    14.2,
+	"pi":       4.0,
+	"opencode": 14.2,
 }
 
 // ThinkingBytesPerToken returns the bytes-per-token divisor for an agent, defaulting to the

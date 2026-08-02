@@ -235,7 +235,7 @@ type Reducer struct {
 // NewReducer returns a Reducer for one session of the given agent.
 func NewReducer(agent Agent) (*Reducer, error) {
 	switch agent {
-	case AgentClaude, AgentCodex, AgentPi:
+	case AgentClaude, AgentCodex, AgentPi, AgentOpencode:
 		return &Reducer{agent: agent, r: reducer{lastUsageOffset: -1}}, nil
 	default:
 		return nil, fmt.Errorf("unknown agent %q", agent)
@@ -252,6 +252,8 @@ func (x *Reducer) Feed(region []byte, baseOffset int64) error {
 		return x.r.reduceClaude(region, baseOffset)
 	case AgentCodex:
 		return x.r.reduceCodex(region, baseOffset)
+	case AgentOpencode:
+		return x.r.reduceOpencode(region, baseOffset)
 	default:
 		return x.r.reducePi(region, baseOffset)
 	}

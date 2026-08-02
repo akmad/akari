@@ -1684,7 +1684,7 @@ export interface components {
         };
         AnnounceSession: {
             /** @enum {string} */
-            agent: "claude" | "codex" | "pi";
+            agent: "claude" | "codex" | "pi" | "opencode";
             cwd?: string;
             git_branch?: string;
             /**
