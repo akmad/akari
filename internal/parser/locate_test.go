@@ -134,6 +134,49 @@ func TestLocatePiBodies(t *testing.T) {
 	}
 }
 
+// TestLocateOpencodeBodies checks the streaming locator against the oracle for
+// OpenCode part lines. The interesting cases are all about ordering and result
+// selection: OpenCode resolves a tool call in place, so the input and the result
+// share one line, and it writes the state object's keys in whichever order the
+// call's lifecycle produced them, so the result can appear before the input.
+func TestLocateOpencodeBodies(t *testing.T) {
+	img := fakePNGBase64()
+	cases := []string{
+		// Input then output, the common completed shape.
+		`{"type":"part","id":"prt_1","messageID":"msg_1","data":{"type":"tool","tool":"read","callID":"c1","state":{"status":"completed","input":{"file_path":"a.go"},"output":"package a\n"}}}`,
+		// The same call with its keys the other way round: source order, not schema
+		// order, must decide which body is emitted first.
+		`{"type":"part","id":"prt_2","messageID":"msg_1","data":{"type":"tool","tool":"read","callID":"c2","state":{"output":"package b\n","status":"completed","input":{"file_path":"b.go"}}}}`,
+		// A failed call: no output, and state.error stands in its place.
+		`{"type":"part","id":"prt_3","messageID":"msg_1","data":{"type":"tool","tool":"grep","callID":"c3","state":{"title":"Search","metadata":{"x":1},"status":"error","input":{"pattern":"p"},"error":"File not found"}}}`,
+		// An object-shaped output stays raw JSON rather than being flattened.
+		`{"type":"part","id":"prt_4","messageID":"msg_1","data":{"type":"tool","tool":"bash","callID":"c4","state":{"status":"completed","input":{"command":"ls"},"output":{"stdout":"a\nb"}}}}`,
+		// An unfinished call has no result at all; only its input is a body. The
+		// client never uploads one, but the locator must not invent a result.
+		`{"type":"part","id":"prt_5","messageID":"msg_1","data":{"type":"tool","tool":"bash","callID":"c5","state":{"status":"running","input":{"command":"sleep 1"}}}}`,
+		// A pasted image is lifted as an attachment.
+		`{"type":"part","id":"prt_6","messageID":"msg_1","data":{"type":"file","mime":"image/png","filename":"clip.png","url":"data:image/png;base64,` + img + `"}}`,
+		// Lines that carry nothing liftable.
+		`{"type":"part","id":"prt_7","messageID":"msg_1","data":{"type":"text","text":"just prose"}}`,
+		`{"type":"part","id":"prt_8","messageID":"msg_1","data":{"type":"reasoning","text":"thinking"}}`,
+		`{"type":"message","id":"msg_1","role":"assistant","timeCreated":1,"data":{"role":"assistant","modelID":"gpt-5.6-sol","time":{"created":1,"completed":2}}}`,
+		`{"type":"session","id":"ses_1","slug":"s","title":"t","directory":"/d","projectID":"p","parentID":"","agent":"build","model":{"id":"gpt-5.6-sol"},"version":"1.18.7","timeCreated":1}`,
+	}
+	for _, c := range cases {
+		locateParity(t, AgentOpencode, c)
+	}
+}
+
+// TestLocateOpencodeMatchesFixture runs the locator over every line of the
+// committed OpenCode fixture, which is the same transcript shape the client
+// materializes, so the streaming and buffered paths are compared on realistic
+// input rather than only on hand-written lines.
+func TestLocateOpencodeMatchesFixture(t *testing.T) {
+	for _, line := range strings.Split(strings.TrimSpace(string(loadFixture(t, "opencode.jsonl"))), "\n") {
+		locateParity(t, AgentOpencode, line)
+	}
+}
+
 // TestLocateStreamsInBoundedWindows confirms the locator reads the body lazily: a
 // large body is located without the reader being asked for all of it up front. The
 // span machinery itself never buffers the value, so locating bodies in a huge line is
