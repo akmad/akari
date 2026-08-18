@@ -295,8 +295,19 @@ func TestRoots(t *testing.T) {
 	// akari's own rather than an agent-defined one.
 	env[OpencodeCacheEnvVar] = "/custom/opencode-cache"
 	roots = Roots(config.Client{}, func(k string) string { return env[k] }, home)
-	if want := (Root{Agent: "opencode", Dir: "/custom/opencode-cache", Optional: true}); roots[3] != want {
-		t.Errorf("opencode override = %v, want %v", roots[3], want)
+	// Found by agent, not by index. Upstream adds built-in roots over time — cursor
+	// and grok arrived in v0.7.0 and shifted OpenCode from position 3 to 5 — and a
+	// positional assertion does not fail loudly when that happens, it silently
+	// starts asserting against a different agent.
+	wantOC := Root{Agent: "opencode", Dir: "/custom/opencode-cache", Optional: true}
+	var gotOC Root
+	for _, r := range roots {
+		if r.Agent == "opencode" {
+			gotOC = r
+		}
+	}
+	if gotOC != wantOC {
+		t.Errorf("opencode override = %v, want %v", gotOC, wantOC)
 	}
 }
 

@@ -72,7 +72,7 @@
       "CallIndex": 2,
       "ToolName": "grep",
       "Category": "search",
-      "FilePath": "",
+      "FilePath": "/home/ada/code/ledger",
       "Detail": "coupon",
       "InputBody": "{\"pattern\":\"coupon\",\"path\":\"/home/ada/code/ledger\"}",
       "InputSHA256": "",
@@ -192,7 +192,8 @@
     "PRNumber": 0,
     "PRURL": "",
     "PRRepo": "",
-    "ParentSourceID": "ses_hop0000000000000000000001"
+    "ParentSourceID": "ses_hop0000000000000000000001",
+    "ChildSourceIDs": null
   },
   "Started": "2026-08-01T15:35:59.781Z",
   "Ended": "2026-08-01T15:36:02.4Z"

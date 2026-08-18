@@ -200,7 +200,10 @@ func (r *reducer) opencodeTool(d gjson.Result) {
 	tc := ToolCall{
 		MessageOrdinal: ord, CallIndex: r.openCalls,
 		ToolName: name, Category: toolCategory(name),
-		FilePath: d.Get("state.input.file_path").String(),
+		// toolFilePath, not a hand-rolled file_path lookup: it reads the same keys in
+		// the same order as the sentinel writer, so the inline parse and the CAS-lifted
+		// parse project the same FilePath (TestRoundTripProjection asserts exactly that).
+		FilePath: toolFilePath(d.Get("state.input")),
 		CallUID:  d.Get("callID").String(),
 	}
 	setToolInput(&tc, d.Get("state.input"), "application/json")
