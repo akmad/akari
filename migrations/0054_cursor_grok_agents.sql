@@ -2,9 +2,22 @@
 -- is the announce path's hard gate; parser.Agents and the OpenAPI enum grew the
 -- same two names in the same change.
 
+-- FORK EDIT: 'opencode' is carried through this constraint rewrite.
+--
+-- Upstream numbered this 0054 and so did the fork's 0054_agent_opencode. The
+-- ledger keys on the whole filename, so both apply and lexical order runs
+-- agent_opencode first — but this statement then re-declares the constraint from
+-- scratch, and a database holding real OpenCode sessions fails the ADD with
+-- SQLSTATE 23514. Renumbering the fork's migration does not help: this DROP is
+-- unconditional and this list is absolute, so it strips 'opencode' whenever it
+-- runs. The list itself has to know about it.
+--
+-- Editing an upstream migration is safe precisely here: migrations are
+-- forward-only and append-only, so upstream will never revise this file, and the
+-- divergence cannot conflict on a future rebase.
 ALTER TABLE sessions DROP CONSTRAINT sessions_agent_check;
 ALTER TABLE sessions ADD CONSTRAINT sessions_agent_check
-  CHECK (agent IN ('claude', 'codex', 'pi', 'cursor', 'grok'));
+  CHECK (agent IN ('claude', 'codex', 'pi', 'cursor', 'grok', 'opencode'));
 
 -- Grok parenthood is declared by the parent, not the child: a subagent's own
 -- directory carries no parent reference, but the parent's updates.jsonl logs
