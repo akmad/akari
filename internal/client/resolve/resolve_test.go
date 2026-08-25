@@ -135,6 +135,10 @@ func TestPeekHeaderRejectsNonSession(t *testing.T) {
 		// pi lines that are neither a session header (no id/cwd) nor a typed message.
 		{"pi", "n1.jsonl", `{"type":"session"}` + "\n"},
 		{"pi", "n2.jsonl", `{"type":"tool","output":"hello","cwd":"/x"}` + "\n"},
+		// OMP files require the versioned session header; title and lifecycle lines
+		// elsewhere under its recursive root are not sessions by themselves.
+		{"omp", "m1.jsonl", `{"type":"session","cwd":"/x"}` + "\n"},
+		{"omp", "m2.jsonl", `{"type":"custom","customType":"session_exit","data":{}}` + "\n"},
 		// An OpenCode transcript always opens with an identified session header, so
 		// an id-less header or a stray part line in the cache directory is not one.
 		{"opencode", "o1.jsonl", `{"type":"session","directory":"/x"}` + "\n"},
@@ -165,6 +169,7 @@ func TestPeekHeaderAcceptsRealSessions(t *testing.T) {
 		// A pi file that opens with a typed message line (a tail with no header) still
 		// reads as a session; it just has no cwd, so it resolves as orphaned later.
 		{"pi", "p2.jsonl", `{"type":"message","message":{"role":"user","content":"hi"}}` + "\n", ""},
+		{"omp", "m.jsonl", `{"type":"title","v":1,"title":"Work"}` + "\n" + `{"type":"session","version":3,"id":"omp-1","cwd":"/e"}` + "\n", "/e"},
 		// OpenCode names the working directory "directory"; its own session id is
 		// unique per session, so it stands as the source id unmodified.
 		{"opencode", "ses_ada1.jsonl", `{"type":"session","id":"ses_ada1","directory":"/d"}` + "\n", "/d"},

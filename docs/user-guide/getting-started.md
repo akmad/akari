@@ -87,8 +87,8 @@ When it looks right, push for real:
 akari sync
 ```
 
-`akari sync` discovers the session logs Claude Code, Codex, pi, Cursor, and Grok leave in their
-standard locations, resolves each to its git project, and streams the new bytes to
+`akari sync` discovers the session records Claude Code, Codex, pi, OMP, Cursor,
+Grok, and OpenCode leave locally, resolves each to its git project, and streams the new bytes to
 the server in one pass, then exits. Uploads resume from the server's cursor, so a
 re-run only sends what is new.
 

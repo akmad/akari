@@ -288,4 +288,11 @@ package parse
 // New-agent parsing itself touches no existing projection; the claude and codex
 // goldens are byte-for-byte identical, and the new cursor and grok fixtures join
 // the snapshot set.
-const Epoch = 22
+//
+// Epoch 22 -> 23: add OMP's native version-3 session format. The new reducer
+// projects its titles, injected context, messages, plaintext thinking, tool calls
+// and results, cache/reasoning token classes, model and thinking-level changes,
+// compactions, terminal errors, and parent-session lineage. Existing agents'
+// projections are unchanged; the bump makes the new OMP golden part of the
+// deployed parser contract.
+const Epoch = 23

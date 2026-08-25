@@ -19,10 +19,10 @@ does not assume the reader has seen any other tool.
 ## Goals
 
 - Back up agent sessions (full text, plus binary attachments where present) from
-  Claude Code, Codex, pi, Cursor (the cursor-agent CLI), and Grok (the Grok
-  CLI). Cursor is transcript-only: its CLI persists no model, token usage, tool
-  results, or reasoning, so its sessions parse without a usage ledger and stay
-  outside the money and thinking panels.
+  Claude Code, Codex, pi, OMP, Cursor (the cursor-agent CLI), Grok (the Grok
+  CLI), and OpenCode. Cursor is transcript-only: its CLI persists no model,
+  token usage, tool results, or reasoning, so its sessions parse without a
+  usage ledger and stay outside the money and thinking panels.
 - Normalize sessions to a project by **git remote**, so the same repository is
   one project regardless of local path, branch, or worktree, and regardless of
   which machine or user it came from.
@@ -41,8 +41,8 @@ does not assume the reader has seen any other tool.
   session.
 - No local standalone viewer. Clients only push.
 - No DuckDB or any second analytics engine. Postgres is the only datastore.
-- No attempt to support every agent. Three parsers (Claude, Codex, pi) with room
-  to add more later.
+- No attempt to support every agent. Seven explicit formats with room to add
+  more later.
 
 ## Platforms
 
@@ -777,7 +777,7 @@ CREATE TABLE sessions (
   id                BIGSERIAL PRIMARY KEY,
   user_id           BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   project_id        BIGINT NOT NULL REFERENCES projects(id),
-  agent             TEXT NOT NULL,        -- claude | codex | pi | opencode
+  agent             TEXT NOT NULL,        -- claude | codex | pi | omp | cursor | grok | opencode
   source_session_id TEXT NOT NULL,
   parent_session_id BIGINT REFERENCES sessions(id) ON DELETE SET NULL,
   relationship_type TEXT NOT NULL DEFAULT '',  -- '' | subagent | continuation
@@ -1440,10 +1440,10 @@ and retains three 5 MiB history files beside the 5 MiB active log.
   location (via Go's `os.UserConfigDir()`: `~/.config/akari/config.toml` on
   Linux, `~/Library/Application Support/akari/config.toml` on macOS,
   `%AppData%\akari\config.toml` on Windows). It holds the server URL, API token,
-  any extra session roots, and watch excludes. akari reads no environment
-  variables of its own; the only env it consults are the agents' own documented
-  overrides (`CLAUDE_PROJECTS_DIR`, `CODEX_SESSIONS_DIR`, `PI_DIR`) while
-  locating their session roots.
+  any extra session roots, and watch excludes. Apart from the OpenCode database
+  and cache overrides, discovery follows each agent's documented relocation
+  variables (`CLAUDE_PROJECTS_DIR`, `CODEX_SESSIONS_DIR`, `PI_DIR`, OMP's
+  `PI_CODING_AGENT_*` / profile variables, and `GROK_HOME`).
 - There is no on-disk state. The git resolution cache (directory to remote) is
   kept in memory for the process lifetime only; everything else the client needs
   to know it gets from the server on announce.
@@ -1579,7 +1579,7 @@ cmd/
   akari/            # client binary
   akari-server/     # server binary (plus sweep, reparse, dev-seed subcommands)
 internal/
-  parser/           # claude, codex, pi, cursor, grok, opencode parsers + normalized types (shared)
+  parser/           # claude, codex, pi, omp, cursor, grok, opencode parsers + normalized types (shared)
   casenc/           # client-side CAS body encoder (zstd policy, deterministic)
   gitremote/        # remote URL canonicalization
   pricing/          # compiled-in rate table + cost computation

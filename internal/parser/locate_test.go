@@ -134,6 +134,14 @@ func TestLocatePiBodies(t *testing.T) {
 	}
 }
 
+// TestLocateOMPMatchesFixture runs the streaming locator over OMP's pi-compatible
+// tool-call envelopes, including the extra entry kinds OMP interleaves with them.
+func TestLocateOMPMatchesFixture(t *testing.T) {
+	for _, line := range strings.Split(strings.TrimSpace(string(loadFixture(t, "omp.jsonl"))), "\n") {
+		locateParity(t, AgentOMP, line)
+	}
+}
+
 // TestLocateOpencodeBodies checks the streaming locator against the oracle for
 // OpenCode part lines. The interesting cases are all about ordering and result
 // selection: OpenCode resolves a tool call in place, so the input and the result

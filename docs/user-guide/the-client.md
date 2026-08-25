@@ -204,7 +204,7 @@ The keys:
   overrides it per run.
 - **`extra_roots`** (optional): additional discovery roots, each an
   `{ agent, path, follow_root_link }` entry where `agent` is `claude`, `codex`,
-  `pi`, `cursor`, `grok`, or `opencode` and `follow_root_link` (optional, default `false`) opts the root into
+  `pi`, `omp`, `cursor`, `grok`, or `opencode` and `follow_root_link` (optional, default `false`) opts the root into
   resolving a symlink or, on Windows, a directory junction at `path` itself
   before walking it; see [Discovery](#discovery) below for why that is opt-in.
   Use these when your sessions live somewhere other than the standard location.
@@ -250,9 +250,34 @@ plus any `extra_roots` you configured:
 | Claude Code | `~/.claude/projects` | `CLAUDE_PROJECTS_DIR` |
 | Codex | `~/.codex/sessions` and `~/.codex/archived_sessions` | `CODEX_SESSIONS_DIR` |
 | pi | `~/.pi/agent/sessions` | `PI_DIR` (sessions at `$PI_DIR/agent/sessions`) |
+| OMP | `~/.omp/agent/sessions` | `PI_CODING_AGENT_SESSION_DIR`, `OMP_PROFILE` / `PI_PROFILE`, `PI_CONFIG_DIR`, `PI_CODING_AGENT_DIR` (see below) |
 | Cursor | `~/.cursor/projects` (per-session transcripts under `<project>/agent-transcripts`) | none |
 | Grok | `~/.grok/sessions` (one directory per session; `updates.jsonl` is the record) | `GROK_HOME` (sessions at `$GROK_HOME/sessions`) |
 | OpenCode | a cache akari writes (see below) | `AKARI_OPENCODE_DB`, `AKARI_OPENCODE_CACHE_DIR` |
+
+### OMP
+
+OMP writes versioned JSONL sessions directly under
+`~/.omp/agent/sessions/<encoded-cwd>`. akari reads those files in place: the
+fixed-width title slot, messages, plaintext thinking, tool calls and results,
+cache and reasoning token classes, compactions, failed or aborted turns, and
+parent-session lineage all project like the equivalent records from other
+agents.
+
+OMP retains several `PI_*` relocation variables. akari follows the same
+precedence for the active session root:
+
+1. `PI_CODING_AGENT_SESSION_DIR` points directly at the sessions directory.
+2. A non-default `OMP_PROFILE` (or legacy `PI_PROFILE`) uses
+   `<PI_CONFIG_DIR or .omp>/profiles/<name>/agent/sessions` under the home
+   directory. Named profiles ignore `PI_CODING_AGENT_DIR`, matching OMP.
+3. `PI_CODING_AGENT_DIR` relocates the default profile's agent directory;
+   sessions are under its `sessions` child.
+4. Otherwise the root is `~/<PI_CONFIG_DIR or .omp>/agent/sessions`.
+
+Only the active profile is automatic. Add another profile's sessions directory
+as an `extra_roots` entry with `agent = "omp"` when one akari client should
+collect several profiles.
 
 ### OpenCode
 

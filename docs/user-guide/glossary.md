@@ -11,10 +11,10 @@ Definitions for the terms the rest of the guide uses.
 ## The session
 
 A **session** is one agent run: a single, continuous interaction with a supported
-coding agent (Claude Code, Codex, pi, Cursor, or Grok), from the first message to
-the last. Each agent writes its session to
-a log file on disk as it works, and that file is what akari ingests. A session
-carries a stable **source id** (the agent's own identifier for the run), the
+coding agent (Claude Code, Codex, pi, OMP, Cursor, Grok, or OpenCode), from the
+first message to the last. Most agents write a JSONL session log as they work;
+for OpenCode, akari materializes the equivalent log from its local database.
+Each session carries a stable **source id** (the agent's own identifier for the run), the
 **machine** it ran on, the account that owns it, the git branch and working
 directory it started in, timings, and its full transcript. A session still being
 written streams to the server as it grows, so the UI can show it updating live.

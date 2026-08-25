@@ -8,9 +8,9 @@ order: 1
 
 ## The problem
 
-Claude Code, Codex, pi, Cursor, and Grok each write a detailed session log to disk as they
-work: every message, every piece of thinking, every tool call and its result, the
-tokens spent. That log is the record of what an agent actually did, and it is
+Claude Code, Codex, pi, OMP, Cursor, Grok, and OpenCode each produce a detailed
+local session record as they work: every message, every piece of thinking, every
+tool call and its result, the tokens spent. That record shows what an agent actually did, and it is
 worth keeping. But by default it lives in a dot-directory on one laptop, in a
 format built for the tool that wrote it, with no cost attached and no way to
 search across the run you half-remember from last week on a different machine.
