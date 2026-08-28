@@ -138,12 +138,6 @@ func TestRateAtGPT(t *testing.T) {
 		model         string
 		input, output float64
 	}{
-		// Current generation. GPT-5.6 is a three-tier family; the gpt-5.6 alias
-		// routes to sol and prices at sol's rate.
-		{"gpt-5.6", 5, 30},
-		{"gpt-5.6-sol", 5, 30},
-		{"gpt-5.6-terra", 2.50, 15},
-		{"gpt-5.6-luna", 1, 6},
 		{"gpt-5.5", 5, 30},
 		{"gpt-5.5-pro", 30, 180},
 		{"gpt-5.4", 2.50, 15},
@@ -176,7 +170,7 @@ func TestProviderSpecificRates(t *testing.T) {
 		{"opencode/deepseek-v4-flash", 0.14, 0.28, 0.028},
 		{"opencode-go/deepseek-v4-flash", 0.22, 0.66, 0.007},
 		{"openrouter/deepseek/deepseek-v4-flash", 0.0868, 0.1736, 0.01736},
-		{"openai/gpt-5.6-sol", 4, 20, 0.40},
+		{"openai/gpt-5.6-sol", 5, 30, 0.50},
 		{"opencode/gpt-5.6-sol", 2, 10, 0.20},
 	}
 	for _, c := range cases {
@@ -218,6 +212,38 @@ func TestDirectProviderFallback(t *testing.T) {
 	}
 	if _, ok := RateAt("unlisted-router/claude-opus-4-8", anytime); ok {
 		t.Error("an unlisted router must not inherit the direct Anthropic rate")
+	}
+}
+
+func TestGPT56DatedWindows(t *testing.T) {
+	cases := []struct {
+		name                       string
+		model                      string
+		at                         time.Time
+		input, output, write, read float64
+	}{
+		{"sol before reprice", "gpt-5.6-sol", gpt56SolReprice.Add(-time.Nanosecond), 5, 30, 6.25, 0.50},
+		{"sol reprice boundary", "gpt-5.6-sol", gpt56SolReprice, 4, 20, 5, 0.40},
+		{"sol alias before reprice", "gpt-5.6", gpt56SolReprice.Add(-time.Nanosecond), 5, 30, 6.25, 0.50},
+		{"sol alias reprice boundary", "gpt-5.6", gpt56SolReprice, 4, 20, 5, 0.40},
+		{"terra before reprice", "gpt-5.6-terra", gpt56LunaTerraReprice.Add(-time.Nanosecond), 2.50, 15, 3.125, 0.25},
+		{"terra reprice boundary", "gpt-5.6-terra", gpt56LunaTerraReprice, 2, 12, 2.50, 0.20},
+		{"luna before reprice", "gpt-5.6-luna", gpt56LunaTerraReprice.Add(-time.Nanosecond), 1, 6, 1.25, 0.10},
+		{"luna reprice boundary", "gpt-5.6-luna", gpt56LunaTerraReprice, 0.20, 1.20, 0.25, 0.02},
+		{"undated sol keeps launch price", "gpt-5.6-sol", time.Time{}, 5, 30, 6.25, 0.50},
+		{"undated terra keeps launch price", "gpt-5.6-terra", time.Time{}, 2.50, 15, 3.125, 0.25},
+		{"undated luna keeps launch price", "gpt-5.6-luna", time.Time{}, 1, 6, 1.25, 0.10},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r, ok := RateAt(c.model, c.at)
+			if !ok {
+				t.Fatalf("%s should be priced", c.model)
+			}
+			if r.Input != c.input || r.Output != c.output || r.CacheWrite != c.write || r.CacheRead != c.read {
+				t.Errorf("rate = %+v, want %v/%v write %v read %v", r, c.input, c.output, c.write, c.read)
+			}
+		})
 	}
 }
 
@@ -307,6 +333,13 @@ func TestCostSelectsDatedWindow(t *testing.T) {
 	sticker := Cost("claude-sonnet-5", sonnet5Sticker, 1_000_000, 1_000_000, 0, 0, 0)
 	if math.Abs(sticker-18.0) > 1e-9 {
 		t.Errorf("sticker cost = %v, want 18 (3 + 15)", sticker)
+	}
+}
+
+func TestCostIsArchitectureStable(t *testing.T) {
+	got := Cost("claude-sonnet-4-20250514", anytime, 1500, 120, 0, 6000, 0)
+	if got != 0.0081 {
+		t.Errorf("cost = %.18f, want exact rounded value %.18f", got, 0.0081)
 	}
 }
 
