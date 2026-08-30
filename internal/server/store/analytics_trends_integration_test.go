@@ -109,8 +109,8 @@ func TestInsightsTrends(t *testing.T) {
 	// dollars or cache savings, and it rides day 2, so the latest measured cache bucket
 	// (day 1) keeps its rate.
 	if _, err := st.Pool.Exec(ctx,
-		`INSERT INTO usage_events (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, occurred_at, dedup_key)
-		 VALUES ($1, 'pi-unpriced-xyz', 0, 0, 500, 0, 0, now() - make_interval(days => 2), 't1-unpriced')`,
+		`INSERT INTO usage_events (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, cost_source, occurred_at, dedup_key)
+		 VALUES ($1, 'pi-unpriced-xyz', 0, 0, 500, 0, 0, 'unknown', now() - make_interval(days => 2), 't1-unpriced')`,
 		root1); err != nil {
 		t.Fatalf("seed unpriced usage: %v", err)
 	}
@@ -136,6 +136,25 @@ func TestInsightsTrends(t *testing.T) {
 	// Fleet mix: both models seeded appear as their own bands (only two, so no fold).
 	if !tr.FleetMix.HasData() || len(tr.FleetMix.Models) < 2 {
 		t.Errorf("fleet mix = %+v, want at least two model bands", tr.FleetMix.Models)
+	}
+
+	// Model cost: the same two priced models plus the zero-priced token-bearing event,
+	// each as its own point (no fold). The unpriced row is the reason the scatter
+	// does not drop CostUSD=0 the way the overview's by-model bars collapse them.
+	byCost := map[string]store.ModelCost{}
+	for _, m := range tr.ModelCost {
+		byCost[m.Model] = m
+	}
+	if _, ok := byCost["claude-sonnet-5"]; !ok {
+		t.Errorf("model cost missing sonnet: %+v", tr.ModelCost)
+	}
+	if _, ok := byCost["claude-opus-4-8"]; !ok {
+		t.Errorf("model cost missing opus: %+v", tr.ModelCost)
+	}
+	if unpriced, ok := byCost["pi-unpriced-xyz"]; !ok {
+		t.Errorf("model cost missing unpriced model: %+v", tr.ModelCost)
+	} else if unpriced.CostUSD != 0 || unpriced.Tokens != 500 {
+		t.Errorf("unpriced model = %+v, want $0 and 500 tokens", unpriced)
 	}
 
 	// Signals: the outcomes are counted across buckets (six sessions have a shape and a
@@ -567,6 +586,91 @@ func TestUsageTrendsWholeDayWindow(t *testing.T) {
 	// event's) and m2's on the second.
 	if got := len(ins.Trends.FleetMix.Models); got != 2 {
 		t.Errorf("fleet mix bands = %d, want 2 (m1 and m2)", got)
+	}
+	// The scatter uses the same whole-day window: m1's $3 / 220 tokens (both
+	// dated events on the first day) and m2's unpriced 50 tokens. Undated usage
+	// stays off both charts.
+	byCost := map[string]store.ModelCost{}
+	for _, m := range ins.Trends.ModelCost {
+		byCost[m.Model] = m
+	}
+	if m1, ok := byCost["m1"]; !ok {
+		t.Errorf("model cost missing m1: %+v", ins.Trends.ModelCost)
+	} else if m1.Tokens != 220 || m1.CostUSD < 2.99 || m1.CostUSD > 3.01 {
+		t.Errorf("m1 = %+v, want 220 tokens and $3", m1)
+	}
+	if m2, ok := byCost["m2"]; !ok {
+		t.Errorf("model cost missing m2: %+v", ins.Trends.ModelCost)
+	} else if m2.Tokens != 50 || m2.CostUSD != 0 {
+		t.Errorf("m2 = %+v, want 50 tokens and $0", m2)
+	}
+}
+
+// TestModelCostScatter pins the window-level cost × tokens points: ranking by
+// spend, an empty model id as "unknown", a zero-priced model still present, and
+// usage outside the window dropped. The fold fleet mix applies is deliberately
+// not applied here: mixed price points must not collapse into one average.
+func TestModelCostScatter(t *testing.T) {
+	t.Parallel()
+	st := storetest.NewStore(t)
+	ctx := context.Background()
+	ada := seedUser(t, st, "ada")
+	pid, err := st.UpsertProject(ctx, "github.com/jssblck/akari", "github.com", "jssblck", "akari", "akari", "remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d := time.Now().UTC().AddDate(0, 0, -2)
+	day := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
+	sid := seedSession(t, st, ada, pid, "model-cost")
+	rebuildWith(t, st, sid, store.ProjectionDelta{
+		Messages: []store.MessageDelta{{Ordinal: 0, Role: "user", Content: "go", Timestamp: day.Add(2 * time.Hour)}},
+		Usage: []store.ProjUsage{
+			{Model: "expensive", Input: 100, CostUSD: 10, CostSource: store.CostSourceRateTable, OccurredAt: day.Add(2 * time.Hour), DedupKey: "c1", SourceOffset: 10},
+			{Model: "cheap", Input: 10000, CostUSD: 1, CostSource: store.CostSourceRateTable, OccurredAt: day.Add(3 * time.Hour), DedupKey: "c2", SourceOffset: 20},
+			{Model: "", Input: 50, CostUSD: 0.5, CostSource: store.CostSourceRateTable, OccurredAt: day.Add(4 * time.Hour), DedupKey: "c3", SourceOffset: 30},
+			{Model: "unpriced", Input: 200, CostUSD: 0, CostSource: store.CostSourceUnknown, OccurredAt: day.Add(5 * time.Hour), DedupKey: "c4", SourceOffset: 40},
+			{Model: "old", Input: 1000, CostUSD: 50, CostSource: store.CostSourceRateTable, OccurredAt: day.Add(-10 * 24 * time.Hour), DedupKey: "c5", SourceOffset: 50},
+		},
+		Started: day.Add(2 * time.Hour),
+		Ended:   day.Add(6 * time.Hour),
+	})
+
+	ins, err := st.Insights(ctx, store.AnalyticsFilter{Since: day, Bucket: "day"}, store.AllInsightsPanels)
+	if err != nil {
+		t.Fatalf("insights: %v", err)
+	}
+	if ins.Trends == nil {
+		t.Fatal("Trends is nil")
+	}
+	got := ins.Trends.ModelCost
+	if len(got) == 0 {
+		t.Fatal("ModelCost empty")
+	}
+	if got[0].Model != "expensive" {
+		t.Errorf("first model = %q, want expensive (highest spend)", got[0].Model)
+	}
+	by := map[string]store.ModelCost{}
+	for _, m := range got {
+		by[m.Model] = m
+	}
+	if m, ok := by["expensive"]; !ok || m.Tokens != 100 || m.CostUSD < 9.99 || m.CostUSD > 10.01 || m.Sessions != 1 {
+		t.Errorf("expensive = %+v, want 100 tokens, $10, 1 session", m)
+	}
+	if m, ok := by["cheap"]; !ok || m.Tokens != 10000 || m.CostUSD < 0.99 || m.CostUSD > 1.01 {
+		t.Errorf("cheap = %+v, want 10000 tokens and $1", m)
+	}
+	if m, ok := by["unknown"]; !ok || m.Tokens != 50 {
+		t.Errorf("empty model id = %+v, want unknown with 50 tokens", m)
+	}
+	if m, ok := by["unpriced"]; !ok || m.CostUSD != 0 || m.Tokens != 200 {
+		t.Errorf("unpriced = %+v, want $0 and 200 tokens", m)
+	}
+	if _, ok := by["old"]; ok {
+		t.Errorf("usage before the window leaked onto model cost: %+v", got)
+	}
+	if _, ok := by[""]; ok {
+		t.Errorf("empty model id was not rewritten as unknown: %+v", got)
 	}
 }
 
