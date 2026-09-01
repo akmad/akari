@@ -82,6 +82,10 @@ func discoverOpenCode(root Root, walkDir string, ex Excluder) (files []File, err
 	}
 	defer db.Close()
 
+	if err := probeOpenCodeSchema(db); err != nil {
+		return nil, fmt.Errorf("opencode database %s: %w", dbPath, err)
+	}
+
 	sessions, err := listOpenCodeSessions(db)
 	if err != nil {
 		return nil, fmt.Errorf("list opencode sessions in %s: %w", dbPath, err)
@@ -98,6 +102,85 @@ func discoverOpenCode(root Root, walkDir string, ex Excluder) (files []File, err
 		out = append(out, File{Agent: "opencode", Root: walkDir, Path: path})
 	}
 	return out, nil
+}
+
+// openCodeColumns is every column this file reads, by table. Naming them
+// explicitly, rather than trusting a SELECT to fail, means a schema change is
+// reported as a schema change before any transcript is written, instead of as a
+// query error partway through materializing one.
+var openCodeColumns = map[string][]string{
+	"session":   {"id", "parent_id", "workspace_id", "directory", "title", "slug", "agent", "model", "time_created", "time_updated"},
+	"workspace": {"id", "branch"},
+	"message":   {"id", "session_id", "time_created", "data"},
+	"part":      {"id", "message_id", "session_id", "time_created", "data"},
+}
+
+// probeOpenCodeSchema reports whether the database is one this file can read. A
+// non-nil error is a reason to skip the whole root rather than materialize part
+// of it.
+//
+// The session_message check is the one that matters. It is OpenCode's staged
+// replacement for message+part: while it is empty those two tables are still the
+// source of truth, and the moment it has rows they may not be. Reading them then
+// would produce a transcript that is short rather than wrong -- valid JSONL,
+// correct session header, missing turns -- and nothing downstream can tell that
+// from a session that really was that brief. A column check cannot catch it,
+// because the old tables do not change shape when the new one starts filling.
+func probeOpenCodeSchema(db *sql.DB) error {
+	for _, table := range []string{"session", "workspace", "message", "part"} {
+		cols, err := openCodeTableColumns(db, table)
+		if err != nil {
+			return fmt.Errorf("inspect table %q: %w", table, err)
+		}
+		if len(cols) == 0 {
+			return fmt.Errorf("table %q is missing, so this is not a schema akari can read", table)
+		}
+		for _, want := range openCodeColumns[table] {
+			if !cols[want] {
+				return fmt.Errorf("table %q has no column %q, so the schema has changed", table, want)
+			}
+		}
+	}
+
+	cols, err := openCodeTableColumns(db, "session_message")
+	if err != nil {
+		return fmt.Errorf("inspect table %q: %w", "session_message", err)
+	}
+	if len(cols) == 0 {
+		return nil
+	}
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM session_message`).Scan(&n); err != nil {
+		return fmt.Errorf("count session_message rows: %w", err)
+	}
+	if n > 0 {
+		return fmt.Errorf(
+			"session_message holds %d row(s), so OpenCode has migrated off the message and part tables akari reads; "+
+				"reading them now would silently truncate transcripts. Upgrade akari, or export the sessions with `opencode export`", n)
+	}
+	return nil
+}
+
+// openCodeTableColumns returns a table's column names as a set, empty when the
+// table does not exist. PRAGMA table_info answers both questions at once and is
+// read-only.
+func openCodeTableColumns(db *sql.DB, table string) (map[string]bool, error) {
+	// The table names are compile-time constants from this file, never user
+	// input, so the parameter can only ever carry a fixed identifier.
+	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	cols := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		cols[name] = true
+	}
+	return cols, rows.Err()
 }
 
 func openOpenCodeDB(path string) (*sql.DB, error) {

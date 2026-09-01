@@ -215,3 +215,107 @@ func writeOpenCodeFixtureDB(t *testing.T, path string, inProgress bool) {
 		t.Fatal(err)
 	}
 }
+
+// TestDiscoverOpenCodeRefusesMigratedSchema is the case the column checks cannot
+// catch. session_message is OpenCode's staged replacement for message and part:
+// once it carries rows, the tables akari reads may no longer be the whole
+// transcript, and reading them produces a *short* session rather than a failure
+// -- well-formed JSONL, right header, missing turns. Nothing downstream can tell
+// that from a session that genuinely was that brief, so the only place it can be
+// caught is here, before anything is written.
+func TestDiscoverOpenCodeRefusesMigratedSchema(t *testing.T) {
+	dir := t.TempDir()
+	cache := t.TempDir()
+	prev := openCodeCacheDir
+	openCodeCacheDir = func(string) (string, error) { return cache, nil }
+	t.Cleanup(func() { openCodeCacheDir = prev })
+
+	dbPath := filepath.Join(dir, "opencode.db")
+	writeOpenCodeFixtureDB(t, dbPath, false)
+	addSessionMessageTable(t, dbPath, 1)
+
+	_, _, err := Discover([]Root{{Agent: "opencode", Dir: dir}}, Excluder{})
+	if err == nil {
+		t.Fatal("discover succeeded, want a refusal")
+	}
+	if !strings.Contains(err.Error(), "session_message") {
+		t.Errorf("error = %v, want it to name session_message", err)
+	}
+	entries, rerr := os.ReadDir(cache)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if len(entries) != 0 {
+		t.Errorf("cache holds %d file(s); a refused root must write no transcript", len(entries))
+	}
+}
+
+// TestDiscoverOpenCodeAcceptsEmptySessionMessage pins the other half of the rule.
+// The table exists on current OpenCode installs and is empty there, which is the
+// supported state -- the guard must not treat its mere presence as a migration.
+func TestDiscoverOpenCodeAcceptsEmptySessionMessage(t *testing.T) {
+	dir := t.TempDir()
+	cache := t.TempDir()
+	prev := openCodeCacheDir
+	openCodeCacheDir = func(string) (string, error) { return cache, nil }
+	t.Cleanup(func() { openCodeCacheDir = prev })
+
+	dbPath := filepath.Join(dir, "opencode.db")
+	writeOpenCodeFixtureDB(t, dbPath, false)
+	addSessionMessageTable(t, dbPath, 0)
+
+	files, _, err := Discover([]Root{{Agent: "opencode", Dir: dir}}, Excluder{})
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("files = %d, want 1", len(files))
+	}
+}
+
+// TestDiscoverOpenCodeRefusesChangedColumns covers the cheaper half: a table that
+// lost a column akari reads is reported as a schema change up front, rather than
+// as a query error partway through materializing a transcript.
+func TestDiscoverOpenCodeRefusesChangedColumns(t *testing.T) {
+	dir := t.TempDir()
+	cache := t.TempDir()
+	prev := openCodeCacheDir
+	openCodeCacheDir = func(string) (string, error) { return cache, nil }
+	t.Cleanup(func() { openCodeCacheDir = prev })
+
+	dbPath := filepath.Join(dir, "opencode.db")
+	writeOpenCodeFixtureDB(t, dbPath, false)
+	execOpenCodeFixture(t, dbPath, `ALTER TABLE session DROP COLUMN workspace_id`)
+
+	_, _, err := Discover([]Root{{Agent: "opencode", Dir: dir}}, Excluder{})
+	if err == nil {
+		t.Fatal("discover succeeded, want a refusal")
+	}
+	if !strings.Contains(err.Error(), "workspace_id") {
+		t.Errorf("error = %v, want it to name the missing column", err)
+	}
+}
+
+func addSessionMessageTable(t *testing.T, path string, rows int) {
+	t.Helper()
+	execOpenCodeFixture(t, path, `CREATE TABLE session_message (
+		id TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL,
+		data TEXT NOT NULL
+	)`)
+	for i := 0; i < rows; i++ {
+		execOpenCodeFixture(t, path, `INSERT INTO session_message (id, session_id, data) VALUES ('sm_`+string(rune('a'+i))+`', 'ses_1', '{}')`)
+	}
+}
+
+func execOpenCodeFixture(t *testing.T, path, stmt string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(stmt); err != nil {
+		t.Fatal(err)
+	}
+}
