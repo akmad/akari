@@ -17,7 +17,7 @@ import (
 // verdict (see quality.Classify); a historical import, long past this window, settles.
 const abandonedIdleMinutes = 30
 
-// signalsCurrent is the predicate that admits only a usable signals row: one whose
+// signalsCurrentOn is the predicate that admits only a usable signals row: one whose
 // session is not flagged signals_stale (the projection has not moved since the
 // grade). It is the single definition of "a current, gradeable signal" that every
 // fleet read shares. There is no version gate: every derived representation
@@ -25,7 +25,12 @@ const abandonedIdleMinutes = 30
 // row is never at a superseded scoring model for longer than one rebuild. It
 // carries no join key: a caller pairs it with its own sig.session_id = s.id in a
 // JOIN ON or an EXISTS, or drops it straight into a CASE.
-const signalsCurrent = "NOT s.signals_stale"
+//
+// alias names the relation carrying signals_stale. Almost every caller joins the
+// sessions row itself and passes "s"; a read over one of the union views passes the
+// view's alias instead, because the view carries the column and no sessions row is
+// in scope (see migration 0060).
+func signalsCurrentOn(alias string) string { return "NOT " + alias + ".signals_stale" }
 
 // SessionSignals is a session's stored behavioral signals: its outcome, its quality
 // score and grade (nil when unscored), and the tool-health counts the score is built
@@ -342,11 +347,27 @@ func gatherObservedThinking(ctx context.Context, tx pgx.Tx, sessionID int64, f *
 // order is total even for the (schema-permitted but parser-never-emitted) case of a NULL
 // or repeated source offset, keeping the reset count deterministic. A session with no
 // usage leaves both facts nil, so the row stores NULL rather than a measured-looking zero.
+//
+// Only transcript-derived rows are read, which is what the source offset selects:
+// provider-reported usage carries the negative sentinel offset that separates it
+// from parsed rows everywhere else (see providerUsageForSessionTx), and a parsed
+// row's offset is its byte position. A vendor billing event covers a whole agent
+// run (a 22-turn Cursor transcript is commonly one event), so its token sum is a
+// run total, not the size of any context window that ever existed. Folding one in
+// would report a peak context of tens of millions of tokens and invent resets
+// between "turns" that are really whole runs, and the peak-context bands are on an
+// absolute token scale (docs/signals.md), so the damage is not self-correcting. A
+// session whose usage is entirely provider-reported measures no context health at
+// all, which is the honest answer.
+//
+// The test is the offset, not the message ordinal: codex and grok legitimately
+// emit parsed usage with no open turn to anchor to, and that usage is still a real
+// context observation.
 func gatherContextHealth(ctx context.Context, tx pgx.Tx, sessionID int64, f *signalFacts) error {
 	rows, err := tx.Query(ctx,
 		`SELECT input_tokens + cache_read_tokens + cache_write_tokens
 		   FROM usage_events
-		  WHERE session_id = $1
+		  WHERE session_id = $1 AND coalesce(source_offset, 0) >= 0
 		  ORDER BY source_offset, source_index, id`, sessionID)
 	if err != nil {
 		return fmt.Errorf("gather context health for session %d: %w", sessionID, err)
@@ -799,7 +820,7 @@ func (s *Store) sessionSignals(ctx context.Context, q querier, sessionID int64) 
 		        sig.assistant_turns, sig.thinking_turns, sig.thinking_tail_tokens, sig.thinking_peak_tokens
 		   FROM session_signals sig
 		   JOIN sessions s ON s.id = sig.session_id
-		  WHERE sig.session_id = $1 AND `+signalsCurrent, sessionID).Scan(
+		  WHERE sig.session_id = $1 AND `+signalsCurrentOn("s"), sessionID).Scan(
 		&sig.SessionID, &sig.Outcome, &sig.OutcomeConfidence, &sig.Score, &sig.Grade,
 		&sig.ToolCalls, &sig.ToolFailures, &sig.ToolRetries, &sig.EditChurn, &sig.LongestFailureStreak,
 		&sig.PromptCount, &sig.ShortPromptCount, &sig.DuplicatePromptCount, &sig.NoCodeContextCount, &sig.UnstructuredStart,

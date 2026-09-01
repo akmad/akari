@@ -145,6 +145,34 @@ func runSync(ctx context.Context, args []string) error {
 	sum, interrupted := syncAll(work, deadline, files, opts.concurrency, run)
 	sum.discoveryFailed = discover.ErrorCount(discoveryErr)
 
+	// Vendor usage collection runs after the transcripts land, so a Cursor session
+	// synced by this same run is already announced when its billing events arrive
+	// and resolves immediately instead of waiting for the next collection. A dry run
+	// reports what it would do and sends nothing.
+	//
+	// An interrupted pass skips it, and a pass interrupted mid-collection stops it.
+	// Everywhere else in this command a first Ctrl-C or an elapsed --time-limit means
+	// "start no new work, finish what is in flight, exit", and the collection is a
+	// fresh network phase of its own: a feed walk of up to 200 requests plus its
+	// upload batches.
+	//
+	// Unlike a file upload it runs on the cancellable deadline rather than on work,
+	// because there is no in-flight state worth finishing. The collection is
+	// idempotent and resumes from the server's watermark, so abandoning it mid-walk
+	// costs nothing and the next pass picks up where this one stopped. Leaving it on
+	// work would mean a Ctrl-C could not stop minutes of requests the operator has
+	// already asked to end.
+	//
+	// The gate reads the deadline as well as syncAll's flag: with an empty file list
+	// the loop body never runs, so nothing sets interrupted, and a limit or Ctrl-C
+	// landing in between would otherwise start the collection on an already-cancelled
+	// context and report a context-cancelled error where every other shutdown path
+	// exits quietly.
+	var providerErr error
+	if !opts.dryRun && !interrupted && deadline.Err() == nil {
+		providerErr = collectProviderUsage(deadline, cfg, client, home)
+	}
+
 	printSummary(len(files), sum, opts.dryRun)
 	if interrupted {
 		// ctx (the bare shutdown context) carries Ctrl-C; if it is still live the
@@ -162,7 +190,7 @@ func runSync(ctx context.Context, args []string) error {
 	if discoveryErr != nil {
 		discoveryErr = fmt.Errorf("discover sessions: %w", discoveryErr)
 	}
-	return errors.Join(discoveryErr, uploadErr)
+	return errors.Join(discoveryErr, uploadErr, providerErr)
 }
 
 // outcome carries one file's finished work from a sync goroutine to the single

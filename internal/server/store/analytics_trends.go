@@ -309,8 +309,8 @@ func (s *Store) resolveTrendSince(ctx context.Context, q querier, f AnalyticsFil
 const maxFleetMixModels = 6
 
 // fleetMixFrom computes each model's token share per bucket. It sums total tokens (input +
-// output + cache read + cache write) per (bucket, model) over the session_usage_daily
-// rollup of scoped sessions, bucketing on the rollup's UTC day (when the usage happened,
+// output + cache read + cache write) per (bucket, model) over the usage_daily union
+// view of scoped sessions, bucketing on the rollup's UTC day (when the usage happened,
 // day-grained) with the whole-day window, then normalizes each bucket to percent and keeps
 // the busiest models with the tail folded into "other". A NULL day is undated usage, off
 // the time axis here as everywhere.
@@ -320,8 +320,7 @@ func (s *Store) fleetMixFrom(ctx context.Context, q querier, f AnalyticsFilter, 
 		`SELECT `+g.sqlBucketDay("sud.day")+` AS b,
 		        sud.model,
 		        coalesce(sum(sud.input_tokens + sud.output_tokens + sud.cache_read_tokens + sud.cache_write_tokens), 0)
-		   FROM session_usage_daily sud
-		   JOIN sessions s ON s.id = sud.session_id
+		   FROM usage_daily sud
 		  WHERE sud.day IS NOT NULL`+filter+`
 		  GROUP BY 1, 2`, args...)
 	if err != nil {
@@ -397,8 +396,7 @@ func (s *Store) fleetMixFrom(ctx context.Context, q querier, f AnalyticsFilter, 
 	ffilter, fargs := unbounded.clauseForRollupDay("sud.day")
 	frows, err := q.Query(ctx,
 		`SELECT sud.model, min(sud.day)
-		   FROM session_usage_daily sud
-		   JOIN sessions s ON s.id = sud.session_id
+		   FROM usage_daily sud
 		  WHERE sud.day IS NOT NULL`+ffilter+`
 		  GROUP BY sud.model`, fargs...)
 	if err != nil {
@@ -473,7 +471,7 @@ func (s *Store) fleetMixFrom(ctx context.Context, q querier, f AnalyticsFilter, 
 }
 
 // modelCostFrom sums each model's spend and billed-token volume over the window
-// from session_usage_daily. It is the window-level counterpart to fleetMixFrom
+// from the usage_daily union view. It is the window-level counterpart to fleetMixFrom
 // (share per bucket): one point per named model, no top-N fold, because folding
 // mixed price points into "other" would put an average on the scatter. An empty
 // model id becomes "unknown", matching fleet mix. Undated (NULL-day) rows stay
@@ -486,8 +484,7 @@ func (s *Store) modelCostFrom(ctx context.Context, q querier, f AnalyticsFilter)
 		        coalesce(sum(sud.cost_usd), 0),
 		        coalesce(sum(sud.input_tokens + sud.output_tokens + sud.cache_read_tokens + sud.cache_write_tokens), 0),
 		        count(DISTINCT sud.session_id)::int
-		   FROM session_usage_daily sud
-		   JOIN sessions s ON s.id = sud.session_id
+		   FROM usage_daily sud
 		  WHERE sud.day IS NOT NULL`+filter+`
 		  GROUP BY 1
 		 HAVING coalesce(sum(sud.cost_usd), 0) > 0
@@ -538,7 +535,7 @@ func (s *Store) signalTrendsFrom(ctx context.Context, q querier, f AnalyticsFilt
 		`SELECT %s AS b, coalesce(sig.grade, '') AS grade, coalesce(sig.outcome, 'unknown') AS outcome, count(*)
 		   FROM sessions s
 		   LEFT JOIN session_signals sig
-		     ON sig.session_id = s.id AND `+signalsCurrent+`
+		     ON sig.session_id = s.id AND `+signalsCurrentOn("s")+`
 		  WHERE s.started_at IS NOT NULL%s
 		  GROUP BY 1, 2, 3`, g.sqlBucket("s.started_at"), filter), args...)
 	if err != nil {
@@ -661,7 +658,7 @@ func (s *Store) signalTrendsFrom(ctx context.Context, q querier, f AnalyticsFilt
 		        count(*) FILTER (WHERE sig.unstructured_start)
 		   FROM sessions s
 		   LEFT JOIN session_signals sig
-		     ON sig.session_id = s.id AND `+signalsCurrent+`
+		     ON sig.session_id = s.id AND `+signalsCurrentOn("s")+`
 		  WHERE s.started_at IS NOT NULL%s
 		  GROUP BY 1`, g.sqlBucket("s.started_at"), filter), args, func(hrows pgx.Rows) error {
 		var b time.Time
@@ -692,7 +689,7 @@ func (s *Store) signalTrendsFrom(ctx context.Context, q querier, f AnalyticsFilt
 		`SELECT %s AS b, coalesce(sum(sig.context_reset_count), 0)
 		   FROM sessions s
 		   JOIN session_signals sig
-		     ON sig.session_id = s.id AND `+signalsCurrent+`
+		     ON sig.session_id = s.id AND `+signalsCurrentOn("s")+`
 		  WHERE s.started_at IS NOT NULL AND sig.peak_context_tokens IS NOT NULL%s
 		  GROUP BY 1`, g.sqlBucket("s.started_at"), filter), args, func(crows pgx.Rows) error {
 		var b time.Time
@@ -745,7 +742,7 @@ func (s *Store) contextHistogramFrom(ctx context.Context, q querier, f Analytics
 		`SELECT sig.peak_context_tokens
 		   FROM sessions s
 		   JOIN session_signals sig
-		     ON sig.session_id = s.id AND `+signalsCurrent+`
+		     ON sig.session_id = s.id AND `+signalsCurrentOn("s")+`
 		  WHERE s.started_at IS NOT NULL AND sig.peak_context_tokens IS NOT NULL%s`,
 		filter), args...)
 	if err != nil {
@@ -779,7 +776,7 @@ func (s *Store) contextHistogramFrom(ctx context.Context, q querier, f Analytics
 }
 
 // economicsFrom computes the per-bucket spend split by session outcome and the cache
-// savings, over the session_usage_daily rollup. Spend buckets on the rollup's UTC day
+// savings, over the usage_daily union view. Spend buckets on the rollup's UTC day
 // (when the money was spent, day-grained) and is gated to the session's outcome so
 // completed-vs-abandoned dollars reconcile with the outcome distribution; the outcome
 // joins in from session_signals at read time per the rollup grain rule. Cache savings is
@@ -804,10 +801,9 @@ func (s *Store) economicsFrom(ctx context.Context, q querier, f AnalyticsFilter,
 		        coalesce(sum(sud.cache_read_tokens), 0),
 		        coalesce(sum(sud.input_tokens), 0),
 		        coalesce(sum(sud.cache_write_tokens), 0)
-		   FROM session_usage_daily sud
-		   JOIN sessions s ON s.id = sud.session_id
+		   FROM usage_daily sud
 		   LEFT JOIN session_signals sig
-		     ON sig.session_id = s.id AND `+signalsCurrent+`
+		     ON sig.session_id = sud.session_id AND `+signalsCurrentOn("sud")+`
 		  WHERE sud.day IS NOT NULL%s
 		  GROUP BY 1`, g.sqlBucketDay("sud.day"), filter), args, func(rows pgx.Rows) error {
 		var b time.Time
@@ -871,7 +867,7 @@ func (s *Store) economicsFrom(ctx context.Context, q querier, f AnalyticsFilter,
 }
 
 // cacheSavingsTrend prices what caching saved and folds it into the grid. The
-// session_usage_daily rollup already sits at day-and-model granularity (exactly what
+// usage_daily union view already sits at day-and-model granularity (exactly what
 // pricing's date-effective windows need), so each (day, model) row group prices with
 // pricing.CacheSavings at that day's rate, then the day's savings sum into its trend
 // bucket, so a weekly bucket that spans a rate change still totals correctly.
@@ -882,8 +878,7 @@ func (s *Store) cacheSavingsTrend(ctx context.Context, q querier, f AnalyticsFil
 		        sud.model,
 		        coalesce(sum(sud.cache_read_tokens), 0),
 		        coalesce(sum(sud.cache_write_tokens), 0)
-		   FROM session_usage_daily sud
-		   JOIN sessions s ON s.id = sud.session_id
+		   FROM usage_daily sud
 		  WHERE sud.day IS NOT NULL`+filter+`
 		  GROUP BY 1, 2`, args...)
 	if err != nil {
