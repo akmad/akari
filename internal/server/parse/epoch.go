@@ -363,4 +363,26 @@ package parse
 // carry no provider usage and do not move; the bump makes the corpus re-fold so
 // already-collected events reach sessions ingested before this change and so
 // already-graded sessions re-grade without a provider row skewing their context.
-const Epoch = 29
+//
+// Epoch 29 -> 30: price claude-fable-5-1 and claude-mythos-5-1 (both at Fable 5's
+// $10/$50 with a $12.50 cache write, but a $0.25 cache read: the 5.1 pair is the
+// only Anthropic model priced at 0.025x input on cache hits rather than 0.1x; see
+// internal/pricing). Both were unknown to the pricing table before, so their usage
+// events carry a zero cost and read as unpriced, and their identifiers folded into
+// Other on public overviews. This bump rebuilds the corpus so every 5.1 usage row
+// re-prices through pricing.Cost and its per-session cache-savings rollup re-folds
+// at the lower read rate in one pass. It is a pricing change, not a reducer-shape
+// change, and no golden fixture uses a 5.1 model, so the projection delta for the
+// fixtures is byte-for-byte identical and the golden snapshots do not move; the
+// bump is the reprice signal and stands on its own.
+//
+// Epoch 30 -> 31: drop claude-sonnet-5's second rate window. The $2/$10 rate was
+// announced as introductory through 2026-08-31, and Epoch 11 encoded the scheduled
+// 2026-09-01 revert to $3/$15 as a dated window; Anthropic has since cancelled that
+// increase and made $2/$10 the standard price, so the window would have overpriced
+// every Sonnet 5 token from 2026-09-01 by 50%. The model is now a single flat
+// window and Epoch 11's second window is gone, which also re-prices the Sonnet 5
+// usage this epoch's own deploy window may already have stored at the sticker rate.
+// A pricing change, not a reducer-shape change, and no golden fixture uses Sonnet 5,
+// so the fixtures do not move; the bump is the reprice signal and stands on its own.
+const Epoch = 31
