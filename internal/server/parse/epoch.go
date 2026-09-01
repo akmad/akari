@@ -363,4 +363,11 @@ package parse
 // carry no provider usage and do not move; the bump makes the corpus re-fold so
 // already-collected events reach sessions ingested before this change and so
 // already-graded sessions re-grade without a provider row skewing their context.
-const Epoch = 29
+//
+// Epoch 29 -> 30: add OMP's native version-3 session format. The new reducer
+// projects its titles, injected context, messages, plaintext thinking, tool calls
+// and results, cache/reasoning token classes, model and thinking-level changes,
+// compactions, terminal errors, and parent-session lineage. Existing agents'
+// projections are unchanged; the bump makes the new OMP golden part of the
+// deployed parser contract.
+const Epoch = 30
