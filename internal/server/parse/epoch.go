@@ -389,4 +389,14 @@ package parse
 // Epoch 31 -> 32: price GPT-6 Astra and allow its released identifier on public
 // overviews. Rebuild existing sessions to replace unknown costs and recompute
 // cache savings. Existing golden fixtures do not use Astra, so they are unchanged.
-const Epoch = 32
+//
+// Epoch 32 -> 33: add the OMP session format. OMP's message envelope descends
+// from pi's, so the new reducer shares that shape, but the format also records a
+// title slot, a combined provider/model selector, injected context, compactions,
+// per-turn reasoning tokens, explicit failed and aborted assistant turns, and
+// parent-session lineage (accepted as either an id or a session path), each of
+// which the pi reducer has no representation for. New-agent parsing itself
+// touches no existing projection; the claude, codex, cursor, grok, opencode, and
+// pi goldens stay byte-for-byte identical, and the new omp fixture joins the
+// snapshot set.
+const Epoch = 33
