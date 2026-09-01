@@ -447,6 +447,109 @@ func TestParsePi(t *testing.T) {
 	}
 }
 
+// TestParseOMP covers OMP's version-3 session format. OMP descends from pi but
+// adds a physical title slot, combined provider/model selectors, injected
+// context, cache and reasoning token classes, compaction records, and explicit
+// failed/aborted assistant messages.
+func TestParseOMP(t *testing.T) {
+	s, err := Parse(AgentOMP, loadFixture(t, "omp.jsonl"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if s.Cwd != "/home/grace/code/proj" {
+		t.Errorf("cwd = %q", s.Cwd)
+	}
+	if len(s.Messages) != 4 {
+		t.Fatalf("messages = %d, want 4", len(s.Messages))
+	}
+	if m := s.Messages[0]; m.Role != RoleUser || m.Content != "Fix the login bug" {
+		t.Errorf("message 0 = %+v", m)
+	}
+	if m := s.Messages[1]; m.Role != RoleContext || m.Content != "Repository rules loaded" {
+		t.Errorf("message 1 = %+v", m)
+	}
+	a := s.Messages[2]
+	if a.Role != RoleAssistant || a.Model != "gpt-5.6-sol" || !a.HasToolUse {
+		t.Errorf("message 2 = %+v", a)
+	}
+	if !a.HasThinking || a.ThinkingText != "Inspect the auth package" || a.ThinkingBytes != len("Inspect the auth package") {
+		t.Errorf("message 2 thinking = %q/%d (has=%v)", a.ThinkingText, a.ThinkingBytes, a.HasThinking)
+	}
+	if m := s.Messages[3]; m.Content != "The missing session guard is fixed." {
+		t.Errorf("message 3 = %+v", m)
+	}
+
+	if len(s.ToolCalls) != 1 {
+		t.Fatalf("tool calls = %d, want 1", len(s.ToolCalls))
+	}
+	tc := s.ToolCalls[0]
+	if tc.ToolName != "read" || tc.Category != "read" || tc.FilePath != "auth.go" || tc.Detail != "" {
+		t.Errorf("tool call = %+v", tc)
+	}
+	if tc.ResultBody != "package auth" || tc.ResultStatus != "ok" || tc.ResultMediaType != "text/plain" {
+		t.Errorf("tool result = %q (%s, %s)", tc.ResultBody, tc.ResultStatus, tc.ResultMediaType)
+	}
+
+	if len(s.UsageEvent) != 2 {
+		t.Fatalf("usage events = %d, want 2", len(s.UsageEvent))
+	}
+	u := s.UsageEvent[0]
+	if u.Input != 100 || u.Output != 50 || u.CacheRead != 25 || u.CacheWrite != 10 || u.Reasoning != 30 {
+		t.Errorf("usage 0 = %+v", u)
+	}
+	if u.Model != "gpt-5.6-sol" || u.DedupKey != "a1" {
+		t.Errorf("usage 0 identity = %+v", u)
+	}
+	if u2 := s.UsageEvent[1]; u2.Input != 120 || u2.Output != 20 || u2.CacheRead != 80 || u2.DedupKey != "a2" {
+		t.Errorf("usage 1 = %+v", u2)
+	}
+
+	if s.Identity.CustomTitle != "Fix login session guard" || s.Identity.ReasoningEffort != "high" {
+		t.Errorf("identity title/effort = %+v", s.Identity)
+	}
+	if s.Identity.ParentSourceID != "01b00000-0000-7000-8000-000000000099" {
+		t.Errorf("identity parent = %q", s.Identity.ParentSourceID)
+	}
+
+	wantEvents := map[string]string{
+		EventModelChange:         `{"model":"gpt-5.6-sol","provider":"openai-codex"}`,
+		EventThinkingLevelChange: `{"level":"high"}`,
+		EventCompaction:          `{"pre_tokens":64000}`,
+		EventAPIError:            `{"message":"upstream reset"}`,
+		EventTurnAborted:         `{"reason":"operator interrupted"}`,
+	}
+	if len(s.Events) != len(wantEvents) {
+		t.Fatalf("events = %d, want %d: %+v", len(s.Events), len(wantEvents), s.Events)
+	}
+	for _, ev := range s.Events {
+		want, ok := wantEvents[ev.Kind]
+		if !ok {
+			t.Errorf("unexpected event = %+v", ev)
+			continue
+		}
+		if ev.AttrsJSON != want {
+			t.Errorf("%s attrs = %s, want %s", ev.Kind, ev.AttrsJSON, want)
+		}
+	}
+}
+
+func TestOMPSourceID(t *testing.T) {
+	for _, tc := range []struct {
+		name, parent, want string
+	}{
+		{"id", "01b00000-0000-7000-8000-000000000099", "01b00000-0000-7000-8000-000000000099"},
+		{"unix path", "/home/grace/.omp/agent/sessions/p/2026-08-20T08-00-00-000Z_parent-id.jsonl", "parent-id"},
+		{"windows path", `C:\Users\Grace\.omp\agent\sessions\p\2026-08-20T08-00-00-000Z_parent-id.jsonl`, "parent-id"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ompSourceID(tc.parent); got != tc.want {
+				t.Errorf("ompSourceID(%q) = %q, want %q", tc.parent, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestParseClaudeFallbackFromBlockAndIterations covers the first-message-fell-back shape:
 // several assistant entries share a message id and requestId, one carries the "fallback"
 // content block and all carry usage.iterations with a fallback_message entry. The reducer
