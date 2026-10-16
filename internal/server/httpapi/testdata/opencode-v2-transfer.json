@@ -1,0 +1,299 @@
+[
+  {
+    "info": {
+      "id": "ses_akari_a1_parent",
+      "projectID": "synthetic-akari-a1",
+      "agent": "build",
+      "model": {
+        "providerID": "openai",
+        "id": "gpt-6-sol",
+        "variant": "high"
+      },
+      "cost": 0.012,
+      "tokens": {
+        "input": 10,
+        "output": 20,
+        "reasoning": 3,
+        "cache": {
+          "read": 4,
+          "write": 5
+        }
+      },
+      "time": {
+        "created": 1700000000000,
+        "updated": 1700000001000
+      },
+      "title": "Synthetic Akari A1",
+      "location": {
+        "directory": "/synthetic-akari-a1"
+      }
+    },
+    "messages": [
+      {
+        "id": "msg_ses_akari_a1_parent_user",
+        "type": "user",
+        "text": "A1 selected runtime prompt",
+        "files": [
+          {
+            "data": "aGVsbG8=",
+            "mime": "text/plain",
+            "name": "hello.txt",
+            "source": {
+              "type": "inline"
+            }
+          }
+        ],
+        "time": {
+          "created": 1700000000100
+        }
+      },
+      {
+        "id": "msg_ses_akari_a1_parent_assistant",
+        "type": "assistant",
+        "agent": "build",
+        "model": {
+          "providerID": "openai",
+          "id": "gpt-6-sol",
+          "variant": "high"
+        },
+        "content": [
+          {
+            "type": "reasoning",
+            "text": "A1 reasoning retained"
+          },
+          {
+            "type": "text",
+            "text": "A1 answer retained"
+          },
+          {
+            "type": "tool",
+            "id": "a1_read",
+            "name": "read",
+            "state": {
+              "status": "completed",
+              "input": {
+                "filePath": "a1.go"
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "A1 file contents"
+                },
+                {
+                  "type": "file",
+                  "uri": "file:///synthetic-output.txt",
+                  "mime": "text/plain"
+                }
+              ]
+            },
+            "time": {
+              "created": 1700000000200,
+              "completed": 1700000000300
+            }
+          },
+          {
+            "type": "tool",
+            "id": "a1_subagent",
+            "name": "subagent",
+            "state": {
+              "status": "completed",
+              "input": {
+                "agent": "explore",
+                "description": "A1 child work",
+                "prompt": "Synthetic child task"
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "A1 child completed"
+                }
+              ],
+              "metadata": {
+                "sessionID": "ses_akari_a1_child"
+              }
+            },
+            "time": {
+              "created": 1700000000300,
+              "completed": 1700000000400
+            }
+          }
+        ],
+        "tokens": {
+          "input": 10,
+          "output": 20,
+          "reasoning": 3,
+          "cache": {
+            "read": 4,
+            "write": 5
+          }
+        },
+        "cost": 0.012,
+        "time": {
+          "created": 1700000000200,
+          "completed": 1700000000500
+        }
+      },
+      {
+        "id": "msg_ses_akari_a1_parent_switch",
+        "type": "model-switched",
+        "model": {
+          "providerID": "openai",
+          "id": "gpt-6-astra",
+          "variant": "high"
+        },
+        "time": {
+          "created": 1700000000600
+        }
+      }
+    ]
+  },
+  {
+    "info": {
+      "id": "ses_akari_a1_child",
+      "projectID": "synthetic-akari-a1",
+      "agent": "explore",
+      "model": {
+        "providerID": "openai",
+        "id": "gpt-6-sol",
+        "variant": "high"
+      },
+      "cost": 0.012,
+      "tokens": {
+        "input": 10,
+        "output": 20,
+        "reasoning": 3,
+        "cache": {
+          "read": 4,
+          "write": 5
+        }
+      },
+      "time": {
+        "created": 1700000000000,
+        "updated": 1700000001000
+      },
+      "title": "Synthetic Akari A1",
+      "location": {
+        "directory": "/synthetic-akari-a1"
+      },
+      "parentID": "ses_akari_a1_parent"
+    },
+    "messages": [
+      {
+        "id": "msg_ses_akari_a1_child_user",
+        "type": "user",
+        "text": "A1 selected runtime prompt",
+        "files": [
+          {
+            "data": "aGVsbG8=",
+            "mime": "text/plain",
+            "name": "hello.txt",
+            "source": {
+              "type": "inline"
+            }
+          }
+        ],
+        "time": {
+          "created": 1700000000100
+        }
+      },
+      {
+        "id": "msg_ses_akari_a1_child_assistant",
+        "type": "assistant",
+        "agent": "explore",
+        "model": {
+          "providerID": "openai",
+          "id": "gpt-6-sol",
+          "variant": "high"
+        },
+        "content": [
+          {
+            "type": "reasoning",
+            "text": "A1 reasoning retained"
+          },
+          {
+            "type": "text",
+            "text": "A1 answer retained"
+          },
+          {
+            "type": "tool",
+            "id": "a1_read",
+            "name": "read",
+            "state": {
+              "status": "completed",
+              "input": {
+                "filePath": "a1.go"
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "A1 file contents"
+                },
+                {
+                  "type": "file",
+                  "uri": "file:///synthetic-output.txt",
+                  "mime": "text/plain"
+                }
+              ]
+            },
+            "time": {
+              "created": 1700000000200,
+              "completed": 1700000000300
+            }
+          },
+          {
+            "type": "tool",
+            "id": "a1_subagent",
+            "name": "subagent",
+            "state": {
+              "status": "completed",
+              "input": {
+                "agent": "explore",
+                "description": "A1 child work",
+                "prompt": "Synthetic child task"
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "A1 child completed"
+                }
+              ],
+              "metadata": {
+                "sessionID": "ses_akari_a1_child"
+              }
+            },
+            "time": {
+              "created": 1700000000300,
+              "completed": 1700000000400
+            }
+          }
+        ],
+        "tokens": {
+          "input": 10,
+          "output": 20,
+          "reasoning": 3,
+          "cache": {
+            "read": 4,
+            "write": 5
+          }
+        },
+        "cost": 0.012,
+        "time": {
+          "created": 1700000000200,
+          "completed": 1700000000500
+        }
+      },
+      {
+        "id": "msg_ses_akari_a1_child_switch",
+        "type": "model-switched",
+        "model": {
+          "providerID": "openai",
+          "id": "gpt-6-astra",
+          "variant": "high"
+        },
+        "time": {
+          "created": 1700000000600
+        }
+      }
+    ]
+  }
+]

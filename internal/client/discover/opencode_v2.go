@@ -107,7 +107,7 @@ func hashOpenCodeV2Source(tx *sql.Tx, sess openCodeSession, stale bool) ([sha256
 	return digest, rows.Err()
 }
 
-// The transcript contract is pinned to OpenCode 2.0.29 session/sql.ts and
+// The transcript contract is pinned to OpenCode 2.0.30 session/sql.ts and
 // schema/session-message.ts. Legacy tables survive migration but stop updating.
 func probeOpenCodeV2Schema(db openCodeQuerier) (bool, error) {
 	cols, err := openCodeTableColumns(db, "session_v2")
@@ -136,7 +136,11 @@ func probeOpenCodeV2Schema(db openCodeQuerier) (bool, error) {
 }
 
 func listV2OpenCodeSessions(db openCodeQuerier) ([]openCodeSession, error) {
-	rows, err := db.Query(`SELECT s.id,coalesce(s.parent_id,''),coalesce(s.directory,''),coalesce(s.title,''),coalesce(s.slug,''),coalesce(w.branch,''),coalesce(s.agent,''),s.model,s.time_created,s.time_updated FROM session_v2 s LEFT JOIN workspace w ON w.id=s.workspace_id ORDER BY s.time_created,s.id`)
+	branch, err := openCodeWorkspaceBranch(db)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(fmt.Sprintf(`SELECT s.id,coalesce(s.parent_id,''),coalesce(s.directory,''),coalesce(s.title,''),coalesce(s.slug,''),%s,coalesce(s.agent,''),s.model,s.time_created,s.time_updated FROM session_v2 s LEFT JOIN workspace w ON w.id=s.workspace_id ORDER BY s.time_created,s.id`, branch))
 	if err != nil {
 		return nil, err
 	}

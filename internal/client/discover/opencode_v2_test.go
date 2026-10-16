@@ -11,7 +11,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// These synthetic tables mirror OpenCode 2.0.29 session/sql.ts. No real database
+// These synthetic tables mirror OpenCode 2.0.30 session/sql.ts. No real database
 // or unrelated tables are needed by discovery.
 func newOpenCodeV2Fixture(t *testing.T, legacy bool) (string, string) {
 	t.Helper()
@@ -257,6 +257,42 @@ func TestDiscoverOpenCodeV2RejectsChangedSchemaAndDuplicateSequence(t *testing.T
 			_, _, err := Discover([]Root{{Agent: "opencode", Dir: dir}}, Excluder{})
 			if err == nil || !strings.Contains(err.Error(), "seq") {
 				t.Fatalf("error=%v", err)
+			}
+		})
+	}
+}
+
+// 2.0.30's workspace table contains opaque provider binding, not the legacy
+// branch column. Mixed stores still have legacy rows pointing at that table.
+func TestDiscoverOpenCodeV2NativeWorkspaceSchema(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		t.Run(map[bool]string{false: "native", true: "mixed with legacy-only"}[legacy], func(t *testing.T) {
+			dir, path := newOpenCodeV2Fixture(t, legacy)
+			execOpenCodeFixture(t, path, `DROP TABLE workspace; CREATE TABLE workspace (id TEXT PRIMARY KEY,provider TEXT NOT NULL,binding TEXT,created_at INTEGER NOT NULL,last_used_at INTEGER NOT NULL); INSERT INTO workspace VALUES ('ws_native','synthetic','{"branch":"opaque-not-a-branch"}',1,1); UPDATE session_v2 SET workspace_id='ws_native';`)
+			files, _, err := Discover([]Root{{Agent: "opencode", Dir: dir}}, Excluder{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := 1
+			if legacy {
+				want = 2
+			}
+			if len(files) != want {
+				t.Fatalf("sessions=%d want %d", len(files), want)
+			}
+			for _, file := range files {
+				raw, err := os.ReadFile(file.Path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				header := strings.SplitN(string(raw), "\n", 2)[0]
+				if gjson.Get(header, "branch").String() != "" {
+					t.Fatalf("invented branch from opaque workspace: %s", header)
+				}
+			}
+			execOpenCodeFixture(t, path, `ALTER TABLE workspace DROP COLUMN binding`)
+			if _, _, err := Discover([]Root{{Agent: "opencode", Dir: dir}}, Excluder{}); err == nil {
+				t.Fatal("unknown workspace schema accepted")
 			}
 		})
 	}

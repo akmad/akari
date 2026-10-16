@@ -732,13 +732,17 @@ Per-agent specifics the parser must handle:
   assistant message carries its provider and model, which form the pricing
   identity.
 - **OpenCode** (`~/.local/share/opencode/opencode.db`): legacy SQLite `session`,
-  `message`, and `part` tables, or OpenCode 2.0.29's `session_v2` and
+  `message`, and `part` tables, or OpenCode 2.0.30's `session_v2` and
   `session_message`. The client materializes one JSONL file per session with a
   `type: "session"` header. Legacy turns use `type: "message"` with nested
   parts; v2 uses `type: "message_v2"` with native tagged message data in `seq`
   order. A v2 row supersedes the same legacy session ID, because migration
   leaves the legacy transcript frozen. Sessions not yet migrated retain legacy
-  discovery. Unknown message/content tags and changed required columns fail
+  discovery. Workspace schema is checked separately: older workspaces supply
+  `branch`, while the native provider/binding table has no branch column. Both
+  native and still-legacy sessions in that store leave branch unset; discovery
+  never interprets the opaque provider binding as a branch. Unknown workspace
+  shapes fail visibly. Unknown message/content tags and changed required columns fail
   visibly rather than publishing a partial transcript. Streaming assistant,
   shell and compaction records withhold the subsequent transcript until complete
   or idle for 60 seconds. Unchanged materialized bytes keep their cache file.
@@ -760,6 +764,40 @@ Per-agent specifics the parser must handle:
   from 1.90 s and 1060 MB allocated per pass to 188 ms and 276 MB. A 256-session/
   16 MiB corpus fell from 286 ms to 30 ms. These measurements exclude startup
   materialization, use no live data and do not certify slower fleet hardware.
+
+
+  The selected stock 2.0.30 ingestion check uses
+  `internal/server/httpapi/testdata/opencode-v2-corpus.py` to prepare four private
+  synthetic snapshots: pre-migration legacy, native shell sessions, imported and
+  resumed mixed history, and rich transfers imported/exported through the exact
+  selected binary. Supply `--binary`, `--legacy-synthetic-db`,
+  `--native-synthetic-db`, `--mixed-synthetic-db` and an absent `--output`.
+  The helper pins the reviewed binary digest, supplies fresh HOME/XDG/config/DB/
+  temp roots and a private authenticated loopback service, and stops its owned
+  writer before freezing receipts. It never selects default history paths or
+  queries credential tables. Only the explicitly synthetic source snapshots may
+  be supplied; do not use live histories with this helper.
+
+  With `AKARI_TEST_OPENCODE_V2_CORPUS` pointing at that output and
+  `AKARI_TEST_DATABASE_URL` pointing at disposable PostgreSQL, run:
+
+  ```sh
+  GOTOOLCHAIN=go1.26.6 go test -race ./internal/server/httpapi \
+    -run '^TestOpenCodeSelectedRuntimeIngestion$' -count=1 -v
+  ```
+
+  The 2026-10-16 macOS arm64 run used stock binary SHA-256
+  `ddb556472e044be6d757fbc5fefc25b2edd2896ddbc0d388d6178b7b0a639b96`
+  (source `f16ef9ad8878279ea2be3cfab7baeed97aef61aa`). It passed discovery,
+  reduction, real HTTP upload, rebuild and authenticated body readback for eight
+  unique IDs across nine ingestion visits: 16 messages, 12 tools, three usage
+  rows, two attachments and 20 bodies. Legacy-to-native replacement reset the
+  existing transcript; resync uploaded nothing. Rich records retained plaintext
+  reasoning, model changes, subagent roles/links, tool file references, names and
+  input/output plus cost and all token fields. The rich transfer was synthetic
+  schema/storage evidence, not a provider-generated model run. Existing malformed
+  schema/reference, settling, same-timestamp and damaged-cache tests remain in
+  force; neither parser output, parse epoch 36 nor any golden changed.
 
 Token usage is normalized across agents into one shape: input, output,
 cache-write (cache creation), cache-read, reasoning.

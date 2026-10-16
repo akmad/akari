@@ -133,7 +133,7 @@ func discoverOpenCode(root Root, walkDir string, ex Excluder) (files []File, err
 
 var openCodeColumns = map[string][]string{
 	"session":   {"id", "parent_id", "workspace_id", "directory", "title", "slug", "agent", "model", "time_created", "time_updated"},
-	"workspace": {"id", "branch"},
+	"workspace": {"id"},
 	"message":   {"id", "session_id", "time_created", "data"},
 	"part":      {"id", "message_id", "session_id", "time_created", "data"},
 }
@@ -142,7 +142,28 @@ type openCodeQuerier interface {
 	Query(query string, args ...any) (*sql.Rows, error)
 }
 
+// The legacy schema stored a branch directly. Native v2 stores an opaque
+// provider binding; it is not a branch and must never be interpreted as one.
+func openCodeWorkspaceBranch(db openCodeQuerier) (string, error) {
+	cols, err := openCodeTableColumns(db, "workspace")
+	if err != nil {
+		return "", err
+	}
+	if cols["id"] && cols["branch"] {
+		return "coalesce(w.branch, '')", nil
+	}
+	for _, name := range []string{"id", "provider", "binding", "created_at", "last_used_at"} {
+		if !cols[name] {
+			return "", fmt.Errorf("workspace schema has neither legacy branch nor native provider binding (missing %q)", name)
+		}
+	}
+	return "''", nil
+}
+
 func probeOpenCodeSchema(db openCodeQuerier) error {
+	if _, err := openCodeWorkspaceBranch(db); err != nil {
+		return err
+	}
 	hasSessionMessage, err := probeOpenCodeSessionMessage(db)
 	if err != nil {
 		return err
@@ -343,20 +364,24 @@ type openCodeSession struct {
 }
 
 func listLegacyOpenCodeSessions(db openCodeQuerier) ([]openCodeSession, error) {
-	rows, err := db.Query(`
+	branch, err := openCodeWorkspaceBranch(db)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(fmt.Sprintf(`
 		SELECT s.id,
 		       coalesce(s.parent_id, ''),
 		       coalesce(s.directory, ''),
 		       coalesce(s.title, ''),
 		       coalesce(s.slug, ''),
-		       coalesce(w.branch, ''),
+		       %s,
 		       coalesce(s.agent, ''),
 		       s.model,
 		       s.time_created,
 		       s.time_updated
 		  FROM session s
 		  LEFT JOIN workspace w ON w.id = s.workspace_id
-		 ORDER BY s.time_created, s.id`)
+		 ORDER BY s.time_created, s.id`, branch))
 	if err != nil {
 		return nil, err
 	}
