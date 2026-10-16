@@ -766,6 +766,69 @@ Per-agent specifics the parser must handle:
   materialization, use no live data and do not certify slower fleet hardware.
 
 
+  The expanded benchmarks also use the selected 2.0.30 workspace schema and
+  distinguish warmed discovery, startup without in-process fingerprints but with
+  existing output, and first materialization with neither fingerprints nor output.
+  Cold cases cover 256 × 64 KiB, 128 × 1 MiB and 4608 × 1 KiB completed assistant
+  messages. Warm capacity cases compare 4096 × 1 KiB and 4608 × 1 KiB. Each pass
+  still opens read-only SQLite and performs complete discovery; no session limit
+  is imposed. These are materializer startup measurements, excluding Go process
+  launch and without flushing the OS filesystem/page caches. Fixture creation,
+  clearing the fingerprint map, deleting output for a first-materialization pass,
+  and post-pass correctness checks are outside the timed/allocation interval.
+
+  ```sh
+  GOTOOLCHAIN=go1.26.6 go test ./internal/client/discover -run '^$' \
+    -bench 'BenchmarkDiscoverOpenCodeV2(Unchanged|Cold|OverCapacity)$' \
+    -benchmem -benchtime=3x -count=3 -timeout=30m
+  ```
+
+  Every sample checks all expected session IDs and exact message bodies, the
+  retained fingerprint keys and 4096-entry bound. Warm/existing-output samples
+  also require every transcript modification time to stay unchanged. The 4608
+  store retains all 4608 output files and the final 4096 fingerprints; 512 IDs
+  sit outside that cache. With this sequential traversal and LRU policy, inserting
+  earlier misses evicts retained entries before their next visit, so a repeated
+  over-capacity scan takes the full decode/serialize path. That cache-miss
+  conclusion follows from traversal and eviction order, rather than per-hit
+  telemetry. It never authorizes dropping a session or trusting timestamps.
+
+
+  Measured 2026-10-16 with Go 1.26.6 on macOS 27.0.1 arm64, Apple M5 Max,
+  128 GiB RAM and default `GOMAXPROCS=18`. Each row has three samples of three
+  measured passes. Latency is the median (and range) of those sample means;
+  allocations are median bytes/count per pass, not resident memory. The host
+  was not reserved exclusively for benchmarking.
+
+  | State | Corpus | Median ms (range) | Allocated MiB | Allocations |
+  |---|---|---:|---:|---:|
+  | Warm | 1 × 16 MiB | 20.1 (19.9–20.2) | 32.1 | 786 |
+  | Warm | 256 × 64 KiB | 32.0 (30.0–32.1) | 45.2 | 21,970 |
+  | Warm | 128 × 1 MiB | 182.3 (167.0–201.3) | 262.9 | 11,592 |
+  | Cold, existing output | 256 × 64 KiB | 261.5 (254.3–264.4) | 167.6 | 46,889 |
+  | First materialization | 256 × 64 KiB | 1,512.7 (1,458.5–1,624.7) | 149.9 | 49,112 |
+  | Cold, existing output | 128 × 1 MiB | 2,355.5 (2,298.0–2,441.6) | 1,280.9 | 26,206 |
+  | First materialization | 128 × 1 MiB | 2,788.4 (2,611.4–3,030.9) | 1,130.7 | 26,998 |
+  | Cold, existing output | 4608 × 1 KiB | 321.7 (312.7–431.0) | 89.2 | 807,868 |
+  | First materialization | 4608 × 1 KiB | 21,204.4 (20,730.7–21,578.2) | 88.5 | 850,321 |
+  | Warm | 4096 × 1 KiB | 256.3 (168.9–293.8) | 156.9 | 333,194 |
+  | Warm | 4608 × 1 KiB | 338.2 (331.4–416.3) | 88.6 | 807,850 |
+
+  All 33 samples passed the identity/body/cache/output checks. The 4608-session
+  warm scan does more allocations than the 4096-session fast path even though
+  its allocated-byte total is smaller; these paths allocate differently, so
+  fewer bytes do not establish a cache hit. No elapsed-time threshold or session
+  cap was introduced. A first scan creating thousands of durable files is a
+  separate startup cost, not evidence of steady-state loss or a fleet-wide bound.
+
+  If startup latency requires a repair, a bounded follow-up can review per-file
+  cache `Sync` while retaining atomic replacement and corruption detection.
+  Avoiding sequential LRU misses could instead be studied with a per-pass
+  snapshot of the existing bounded fingerprints. Neither durability nor eviction
+  policy changed in this work. Physical cold storage and slower fleet hosts remain
+  unmeasured; agree their operational target before claiming readiness there.
+
+
   The selected stock 2.0.30 ingestion check uses
   `internal/server/httpapi/testdata/opencode-v2-corpus.py` to prepare four private
   synthetic snapshots: pre-migration legacy, native shell sessions, imported and
