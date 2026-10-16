@@ -27,6 +27,7 @@ var goldenFixtures = []struct {
 	{name: "grok", agent: "grok"},
 	{name: "omp", agent: "omp"},
 	{name: "opencode", agent: "opencode"},
+	{name: "opencode-v2", agent: "opencode"},
 }
 
 // TestGoldenProjection is the guardrail that makes the parse.Epoch bump impossible

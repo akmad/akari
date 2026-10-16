@@ -55,6 +55,49 @@ func TestRootsOpenCode(t *testing.T) {
 	}
 }
 
+func TestOpenCodeDBLiteralURIPathRemainsReadOnly(t *testing.T) {
+	for _, name := range []string{"profile?mode=rw.db", "profile#trial.db", "profile%3F trial.db"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			original := filepath.Join(dir, "original.db")
+			writeOpenCodeFixtureDB(t, original, false)
+			path := filepath.Join(dir, name)
+			if err := os.Rename(original, path); err != nil {
+				t.Fatal(err)
+			}
+			db, err := openOpenCodeDB(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			var count int
+			if err := db.QueryRow(`SELECT count(*) FROM session`).Scan(&count); err != nil || count != 1 {
+				t.Fatalf("literal filename not read: count=%d error=%v", count, err)
+			}
+			if _, err := db.Exec(`CREATE TABLE unexpected_write (value TEXT)`); err == nil {
+				t.Fatal("database unexpectedly writable")
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || entries[0].Name() != name {
+				t.Fatalf("reader created unexpected sibling files: %v", entries)
+			}
+		})
+	}
+}
+
+func TestOpenCodeDBURIHasNoDriveAuthority(t *testing.T) {
+	for _, path := range []string{"/tmp/profile?trial#1.db", "C:/Users/fixture/profile?trial#1.db"} {
+		dsn := openCodeDBURI(path)
+		want := "file:" + strings.ReplaceAll(strings.ReplaceAll(path, "?", "%3F"), "#", "%23") + "?_pragma=busy_timeout%285000%29&mode=ro"
+		if dsn != want {
+			t.Errorf("SQLite URI=%q want %q", dsn, want)
+		}
+	}
+}
+
 func TestDiscoverOpenCodeMaterializesJSONL(t *testing.T) {
 	dir := t.TempDir()
 	cache := t.TempDir()

@@ -731,13 +731,35 @@ Per-agent specifics the parser must handle:
   `type: "session"` header carrying `cwd`; subsequent lines are messages. Each
   assistant message carries its provider and model, which form the pricing
   identity.
-- **OpenCode** (`~/.local/share/opencode/opencode.db`): SQLite `session`,
-  `message`, and `part` tables. The client materializes one JSONL file per
-  session (a `type: "session"` header, then one `type: "message"` line per turn
-  with its parts nested). Subagent rows set `parent_id` on the child; each
-  session keeps its own token ledger. Token usage is per assistant message
-  (`data.tokens`); `providerID` and `modelID` form the pricing identity.
-  Reasoning may be plaintext, an encrypted xAI blob, or both.
+- **OpenCode** (`~/.local/share/opencode/opencode.db`): legacy SQLite `session`,
+  `message`, and `part` tables, or OpenCode 2.0.29's `session_v2` and
+  `session_message`. The client materializes one JSONL file per session with a
+  `type: "session"` header. Legacy turns use `type: "message"` with nested
+  parts; v2 uses `type: "message_v2"` with native tagged message data in `seq`
+  order. A v2 row supersedes the same legacy session ID, because migration
+  leaves the legacy transcript frozen. Sessions not yet migrated retain legacy
+  discovery. Unknown message/content tags and changed required columns fail
+  visibly rather than publishing a partial transcript. Streaming assistant,
+  shell and compaction records withhold the subsequent transcript until complete
+  or idle for 60 seconds. Unchanged materialized bytes keep their cache file.
+  Subagent rows set `parent_id` on the child; each session keeps its own token
+  ledger. V2 retains reasoning, tool content (including file references), user
+  attachments, reported cost, compactions and idle outcomes. Token usage is per
+  assistant message (`data.tokens`); the provider and model form the pricing
+  identity. Reasoning may be plaintext, an encrypted xAI blob, or both.
+
+  V2 discovery remembers up to 4096 pairs of SHA-256 source/output fingerprints
+  in memory, with least-recently-used eviction. Every pass reads and hashes the
+  exact source rows, session header and settle decision, then hashes the cached
+  output before reusing it. Only an exact match avoids decoding and serializing
+  an unchanged transcript; timestamps alone never authorize reuse. A cold start,
+  changed source or damaged/missing output takes the full validated path.
+  `BenchmarkDiscoverOpenCodeV2Unchanged` measures warmed whole-discovery passes
+  against synthetic histories. With Go 1.26.6 on macOS arm64 (Apple M5 Max),
+  three samples of three passes reduced a 128-session/128 MiB corpus's median
+  from 1.90 s and 1060 MB allocated per pass to 188 ms and 276 MB. A 256-session/
+  16 MiB corpus fell from 286 ms to 30 ms. These measurements exclude startup
+  materialization, use no live data and do not certify slower fleet hardware.
 
 Token usage is normalized across agents into one shape: input, output,
 cache-write (cache creation), cache-read, reasoning.

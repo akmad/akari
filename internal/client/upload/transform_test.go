@@ -992,3 +992,41 @@ func TestScannerDetectsBigLine(t *testing.T) {
 		t.Fatalf("small line off=%d n=%d, want %d/%d", off, n, len(big), len(small))
 	}
 }
+
+func TestTransformOpenCodeV2PreservesSubagentType(t *testing.T) {
+	for _, shape := range []struct{ name, input string }{{"subagent", `{"agent":"explore","description":"Map auth","prompt":"long prompt"}`}, {"task", `{"subagent_type":"explore","description":"Map auth","prompt":"long prompt"}`}} {
+		t.Run(shape.name, func(t *testing.T) {
+			content := `{"type":"message_v2","id":"a","data":{"type":"assistant","agent":"build","model":{"id":"m","providerID":"p"},"content":[{"type":"tool","id":"call","name":"` + shape.name + `","state":{"status":"completed","input":` + shape.input + `,"content":[{"type":"text","text":"done"}],"metadata":{"sessionID":"child"}},"time":{"created":2}}],"time":{"created":1,"completed":3}}}` + "\n"
+			f, size := openTemp(t, content)
+			var first []byte
+			for _, threshold := range []int64{1 << 20, 128} {
+				t.Run(map[int64]string{1 << 20: "buffered", 128: "streaming"}[threshold], func(t *testing.T) {
+					setBigLineThreshold(t, threshold)
+					transformed := runTransform(t, f, 0, size, "opencode", true)
+					if len(transformed.bodies) != 2 {
+						t.Fatalf("bodies=%d", len(transformed.bodies))
+					}
+					parsed, err := parser.Parse(parser.AgentOpenCode, transformed.data)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if len(parsed.Events) != 1 || !strings.Contains(parsed.Events[0].AttrsJSON, `"subagent_type":"explore"`) {
+						t.Fatalf("role missing after upload transform: %+v", parsed.Events)
+					}
+					if first == nil {
+						first = append([]byte(nil), transformed.data...)
+					} else if !bytes.Equal(first, transformed.data) {
+						t.Fatal("buffered and streaming sentinels differ")
+					}
+					h, orig, ok, err := prefixDigest(context.Background(), f, "opencode", size, int64(len(transformed.data)))
+					if err != nil || !ok || orig != size {
+						t.Fatalf("cold prefix digest: orig=%d ok=%v err=%v", orig, ok, err)
+					}
+					if got := hex.EncodeToString(h.Sum(nil)); got != hexSHA(string(transformed.data)) {
+						t.Fatal("cold prefix digest lost role metadata")
+					}
+				})
+			}
+		})
+	}
+}

@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/tidwall/gjson"
@@ -146,6 +148,17 @@ func probeOpenCodeSchema(db openCodeQuerier) error {
 		return err
 	}
 
+	v2, err := probeOpenCodeV2Schema(db)
+	if err != nil {
+		return err
+	}
+	legacy, err := openCodeTableColumns(db, "session")
+	if err != nil {
+		return err
+	}
+	if len(legacy) == 0 && v2 {
+		return nil
+	}
 	for _, table := range []string{"session", "workspace", "message", "part"} {
 		cols, err := openCodeTableColumns(db, table)
 		if err != nil {
@@ -298,7 +311,7 @@ func openOpenCodeDB(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve opencode database %s: %w", path, err)
 	}
-	dsn := "file:" + filepath.ToSlash(abs) + "?mode=ro&_pragma=busy_timeout(5000)"
+	dsn := openCodeDBURI(filepath.ToSlash(abs))
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open opencode database %s: %w", path, err)
@@ -308,6 +321,11 @@ func openOpenCodeDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("open opencode database %s: %w", path, err)
 	}
 	return db, nil
+}
+
+func openCodeDBURI(abs string) string {
+	query := url.Values{"mode": {"ro"}, "_pragma": {"busy_timeout(5000)"}}
+	return (&url.URL{Scheme: "file", OmitHost: true, Path: abs, RawQuery: query.Encode()}).String()
 }
 
 type openCodeSession struct {
@@ -321,9 +339,10 @@ type openCodeSession struct {
 	Model       []byte
 	TimeCreated int64
 	TimeUpdated int64
+	V2          bool
 }
 
-func listOpenCodeSessions(db openCodeQuerier) ([]openCodeSession, error) {
+func listLegacyOpenCodeSessions(db openCodeQuerier) ([]openCodeSession, error) {
 	rows, err := db.Query(`
 		SELECT s.id,
 		       coalesce(s.parent_id, ''),
@@ -360,6 +379,49 @@ func listOpenCodeSessions(db openCodeQuerier) ([]openCodeSession, error) {
 	return out, rows.Err()
 }
 
+// V2 is authoritative when migration kept a legacy row with the same ID.
+func listOpenCodeSessions(db openCodeQuerier) ([]openCodeSession, error) {
+	var out []openCodeSession
+	legacy, err := openCodeTableColumns(db, "session")
+	if err != nil {
+		return nil, err
+	}
+	if len(legacy) > 0 {
+		out, err = listLegacyOpenCodeSessions(db)
+		if err != nil {
+			return nil, err
+		}
+	}
+	v2, err := probeOpenCodeV2Schema(db)
+	if err != nil {
+		return nil, err
+	}
+	if v2 {
+		newer, err := listV2OpenCodeSessions(db)
+		if err != nil {
+			return nil, err
+		}
+		ids := map[string]bool{}
+		for _, s := range newer {
+			ids[s.ID] = true
+		}
+		kept := out[:0]
+		for _, s := range out {
+			if !ids[s.ID] {
+				kept = append(kept, s)
+			}
+		}
+		out = append(kept, newer...)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TimeCreated != out[j].TimeCreated {
+			return out[i].TimeCreated < out[j].TimeCreated
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
+}
+
 type openCodeMessage struct {
 	ID          string
 	TimeCreated int64
@@ -374,6 +436,9 @@ type openCodePart struct {
 }
 
 func materializeOpenCodeSession(db *sql.DB, sess openCodeSession, path string) (bool, error) {
+	if sess.V2 {
+		return materializeV2OpenCodeSession(db, sess, path)
+	}
 	tx, err := db.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return false, err

@@ -102,14 +102,16 @@ type Body struct {
 // casRef is the parsed sentinel: the reference the server records in place of a
 // body it no longer has to store. FilePath is the top-level file_path string the
 // lifted tool input carried, Detail is the input's short human-scannable summary,
-// and IsError preserves a result status derived from body text before lifting.
+// SubagentType preserves OpenCode child roles, and IsError preserves a result
+// status derived from body text before lifting.
 type casRef struct {
-	SHA256    string
-	Bytes     int
-	MediaType string
-	FilePath  string
-	Detail    string
-	IsError   bool
+	SHA256       string
+	Bytes        int
+	MediaType    string
+	FilePath     string
+	Detail       string
+	IsError      bool
+	SubagentType string
 }
 
 // maxSentinelFilePath caps the file_path a sentinel carries. A path longer than
@@ -136,6 +138,15 @@ const maxSentinelDetail = 2048
 // keys and keep an empty detail (their chip already shows file_path).
 var detailKeys = []string{"command", "pattern", "url", "query", "description", "skill"}
 
+// SentinelMetadata retains the bounded semantic fields needed after an input
+// body has been lifted out of the transcript.
+type SentinelMetadata struct {
+	FilePath     string
+	Detail       string
+	SubagentType string
+	IsError      bool
+}
+
 // SentinelBytes renders the CAS reference that replaces a tool body, for callers
 // outside the package (the client's streaming big-line path) that build a rewritten
 // line from located spans rather than from a parsed line. It is the same encoding
@@ -143,7 +154,12 @@ var detailKeys = []string{"command", "pattern", "url", "query", "description", "
 // to one lifted by the buffered path. filePath and detail are empty for anything
 // that is not a tool input carrying them; isError is true only for a failed result.
 func SentinelBytes(sha string, n int, media, filePath, detail string, isError bool) []byte {
-	return sentinelBytes(sha, n, media, filePath, detail, isError)
+	return SentinelBytesWithMetadata(sha, n, media, SentinelMetadata{FilePath: filePath, Detail: detail, IsError: isError})
+}
+
+// SentinelBytesWithMetadata is the shared buffered/streaming reference writer.
+func SentinelBytesWithMetadata(sha string, n int, media string, metadata SentinelMetadata) []byte {
+	return sentinelBytes(sha, n, media, metadata)
 }
 
 // sentinelBytes renders the compact reference that replaces a body in the
@@ -151,12 +167,13 @@ func SentinelBytes(sha string, n int, media, filePath, detail string, isError bo
 // valid JSONL and a Codex line keeps its turn-boundary shape: the client's chunk
 // boundary detection and the server's line parser both see the same line count
 // and the same newline positions as the original.
-func sentinelBytes(sha string, n int, media, filePath, detail string, isError bool) []byte {
+func sentinelBytes(sha string, n int, media string, metadata SentinelMetadata) []byte {
+	filePath, detail, isError := metadata.FilePath, metadata.Detail, metadata.IsError
 	// Hand-build the object so the field order and escaping are fixed and
 	// independent of map iteration: the rewritten transcript must be byte stable
 	// across runs so a re-sync of an unchanged file produces identical bytes and
 	// uploads nothing. Optional fields append in the fixed order file_path, detail,
-	// status so both rewrite paths stay byte-identical.
+	// subagent_type, status so both rewrite paths stay byte-identical.
 	b, _ := json.Marshal(media)
 	out := fmt.Sprintf(`{"%s":1,"sha256":%q,"bytes":%d,"media_type":%s`,
 		sentinelKey, sha, n, string(b))
@@ -167,6 +184,10 @@ func sentinelBytes(sha string, n int, media, filePath, detail string, isError bo
 	if detail != "" {
 		dt, _ := json.Marshal(detail)
 		out += `,"detail":` + string(dt)
+	}
+	if metadata.SubagentType != "" {
+		st, _ := json.Marshal(metadata.SubagentType)
+		out += `,"subagent_type":` + string(st)
 	}
 	if isError {
 		out += `,"status":"error"`
@@ -309,12 +330,13 @@ func asCASRef(v gjson.Result) (casRef, bool) {
 		return casRef{}, false
 	}
 	return casRef{
-		SHA256:    v.Get("sha256").String(),
-		Bytes:     int(v.Get("bytes").Int()),
-		MediaType: v.Get("media_type").String(),
-		FilePath:  v.Get("file_path").String(),
-		Detail:    v.Get("detail").String(),
-		IsError:   v.Get("status").String() == "error",
+		SHA256:       v.Get("sha256").String(),
+		Bytes:        int(v.Get("bytes").Int()),
+		MediaType:    v.Get("media_type").String(),
+		FilePath:     v.Get("file_path").String(),
+		Detail:       v.Get("detail").String(),
+		SubagentType: v.Get("subagent_type").String(),
+		IsError:      v.Get("status").String() == "error",
 	}, true
 }
 
@@ -324,12 +346,13 @@ func asCASRef(v gjson.Result) (casRef, bool) {
 // content/media the CAS stores for it. content is exactly what the server reducer
 // would write to the CAS today, so its sha and length are byte-faithful.
 type bodyField struct {
-	start   int // byte offset of the body's raw span within the line
-	end     int // byte offset just past the raw span
-	content string
-	media   string
-	kind    string // "input" | "result"
-	isError bool
+	start        int // byte offset of the body's raw span within the line
+	end          int // byte offset just past the raw span
+	content      string
+	media        string
+	kind         string // "input" | "result"
+	isError      bool
+	subagentType string
 }
 
 // toolBodyFields enumerates the tool input and result bodies in one parsed line,
@@ -705,9 +728,10 @@ func RewriteLine(agent Agent, line []byte, enc BodyEncoder) ([]byte, []Body) {
 		}
 		sha, stored, contentType := enc.EncodeBody([]byte(f.content))
 		rewritten = append(rewritten, trimmed[cursor:f.start]...)
-		rewritten = append(rewritten, sentinelBytes(sha, len(f.content), f.media,
-			sentinelFilePath(f.kind, f.media, f.content),
-			sentinelDetail(f.kind, f.media, f.content), f.isError)...)
+		rewritten = append(rewritten, sentinelBytes(sha, len(f.content), f.media, SentinelMetadata{
+			FilePath:     sentinelFilePath(f.kind, f.media, f.content),
+			Detail:       sentinelDetail(f.kind, f.media, f.content),
+			SubagentType: f.subagentType, IsError: f.isError})...)
 		cursor = f.end
 		bodies = append(bodies, Body{
 			SHA256:      sha,

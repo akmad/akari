@@ -409,4 +409,6 @@ package parse
 // touches no existing projection; the claude, codex, cursor, grok, opencode, and
 // pi goldens stay byte-for-byte identical, and the new omp fixture joins the
 // snapshot set.
-const Epoch = 35
+// Epoch 35 -> 36: read native OpenCode v2 transcripts, including attachments,
+// reported cost, tool content and lifecycle events, alongside legacy sessions.
+const Epoch = 36

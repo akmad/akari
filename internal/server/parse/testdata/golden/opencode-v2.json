@@ -1,0 +1,109 @@
+{
+  "Messages": [
+    {
+      "Ordinal": 0,
+      "Role": "user",
+      "Content": "hello",
+      "ThinkingText": "",
+      "ThinkingBytes": 0,
+      "Model": "",
+      "HasThinking": false,
+      "HasToolUse": false,
+      "Timestamp": "1970-01-01T00:00:01.1Z"
+    },
+    {
+      "Ordinal": 1,
+      "Role": "assistant",
+      "Content": "answer",
+      "ThinkingText": "think",
+      "ThinkingBytes": 5,
+      "Model": "openai/gpt-6-sol",
+      "HasThinking": true,
+      "HasToolUse": true,
+      "Timestamp": "1970-01-01T00:00:01.2Z"
+    }
+  ],
+  "ToolCalls": [
+    {
+      "MessageOrdinal": 1,
+      "CallIndex": 0,
+      "ToolName": "read",
+      "Category": "read",
+      "FilePath": "foo.go",
+      "Detail": "",
+      "InputBody": "{\"filePath\":\"foo.go\"}",
+      "InputSHA256": "",
+      "InputBytes": 21,
+      "InputMediaType": "application/json",
+      "CallUID": "call1",
+      "AttributionAgent": "",
+      "AttributionSkill": "",
+      "AttributionPlugin": ""
+    }
+  ],
+  "ToolResults": [
+    {
+      "CallUID": "call1",
+      "Body": "[{\"type\":\"text\",\"text\":\"done\"},{\"type\":\"file\",\"uri\":\"file:///output\",\"mime\":\"text/plain\"}]",
+      "BodySHA256": "",
+      "Bytes": 90,
+      "MediaType": "application/json",
+      "Status": "ok",
+      "StructBody": "",
+      "StructSHA256": "",
+      "StructBytes": 0,
+      "StructMediaType": ""
+    }
+  ],
+  "Usage": [
+    {
+      "MessageOrdinal": 1,
+      "Model": "openai/gpt-6-sol",
+      "Input": 10,
+      "Output": 20,
+      "CacheWrite": 5,
+      "CacheRead": 4,
+      "Reasoning": 3,
+      "CostUSD": 0.012,
+      "CostSource": "provider",
+      "ModelNamePublic": true,
+      "OccurredAt": "1970-01-01T00:00:01.2Z",
+      "DedupKey": "a",
+      "SourceOffset": 358,
+      "SourceIndex": 0
+    }
+  ],
+  "Attachments": [
+    {
+      "MessageOrdinal": 0,
+      "SHA256": "",
+      "Body": "hello",
+      "Bytes": 5,
+      "MediaType": "text/plain",
+      "Filename": "hello.txt"
+    }
+  ],
+  "Fallbacks": null,
+  "Events": [
+    {
+      "MessageOrdinal": 1,
+      "Kind": "turn_end",
+      "AttrsJSON": "{\"error\":{\"message\":\"failure\",\"type\":\"APIError\"},\"outcome\":\"failed\"}",
+      "OccurredAt": "1970-01-01T00:00:01.4Z"
+    }
+  ],
+  "Identity": {
+    "CustomTitle": "",
+    "Slug": "",
+    "PermissionMode": "",
+    "ReasoningEffort": "high",
+    "SubagentName": "explore",
+    "PRNumber": 0,
+    "PRURL": "",
+    "PRRepo": "",
+    "ParentSourceID": "ses_parent",
+    "ChildSourceIDs": null
+  },
+  "Started": "1970-01-01T00:00:01Z",
+  "Ended": "1970-01-01T00:00:01.4Z"
+}

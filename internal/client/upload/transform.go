@@ -347,7 +347,7 @@ func (t *transformer) handleBigLine(ctx context.Context, origOff, origLen int64)
 		if err != nil {
 			return nil, err
 		}
-		return sentinelFor(body, loc.FilePath, loc.Detail, loc.IsError), nil
+		return sentinelFor(body, loc), nil
 	})
 	if err != nil {
 		return err
@@ -420,8 +420,8 @@ func appendFileSpan(dst []byte, f *os.File, agent string, off, n int64) ([]byte,
 // sentinelFor renders the CAS reference that replaces a body, reusing the parser's
 // canonical encoding so the bytes match what RewriteLine produces for a small line.
 // The projected fields come from BodyLocation so this path matches RewriteLine.
-func sentinelFor(b parser.Body, filePath, detail string, isError bool) []byte {
-	return parser.SentinelBytes(b.SHA256, b.Bytes, b.MediaType, filePath, detail, isError)
+func sentinelFor(b parser.Body, loc parser.BodyLocation) []byte {
+	return parser.SentinelBytesWithMetadata(b.SHA256, b.Bytes, b.MediaType, parser.SentinelMetadata{FilePath: loc.FilePath, Detail: loc.Detail, SubagentType: loc.SubagentType, IsError: loc.IsError})
 }
 
 // lineContentLen returns the byte length of a line's content (its bytes minus a
@@ -527,7 +527,7 @@ func rewriteForDigest(ctx context.Context, f *os.File, agent string, line []byte
 		if err != nil {
 			return nil, err
 		}
-		return sentinelFor(body, loc.FilePath, loc.Detail, loc.IsError), nil
+		return sentinelFor(body, loc), nil
 	})
 }
 

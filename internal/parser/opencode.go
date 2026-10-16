@@ -25,6 +25,8 @@ func (r *reducer) reduceOpenCode(region []byte, base int64) error {
 			r.reduceOpenCodeSession(e)
 		case "message":
 			r.reduceOpenCodeMessage(e, offset)
+		case "message_v2":
+			return r.reduceOpenCodeV2Message(e, offset)
 		}
 		return nil
 	})
@@ -237,6 +239,9 @@ func parseUnixMilli(ms int64) time.Time {
 // results (state.output, or state.error on failure). The cases mirror
 // reduceOpenCode's tool branch.
 func opencodeBodyFields(e gjson.Result) []bodyField {
+	if e.Get("type").String() == "message_v2" {
+		return opencodeV2BodyFields(e)
+	}
 	if e.Get("type").String() != "message" {
 		return nil
 	}
@@ -277,6 +282,9 @@ func opencodeBodyFields(e gjson.Result) []bodyField {
 // streaming twin of opencodeBodyFields.
 func locateOpenCode(s *lineSource, emit func(BodyLocation) error) error {
 	typ, err := s.topType(Key("type"))
+	if err == nil && typ == "message_v2" {
+		return locateOpenCodeV2(s, emit)
+	}
 	if err != nil || typ != "message" {
 		return err
 	}

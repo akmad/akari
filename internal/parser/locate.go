@@ -34,16 +34,17 @@ func readFull(f io.ReaderAt, buf []byte, off int64) error {
 // bytes the CAS stores (CanonicalBodyReader), so the streamed body is byte
 // identical to what the server records inline today. FilePath is the top-level
 // file_path string of a JSON tool input (empty otherwise), and Detail is the
-// input's short human-scannable summary. IsError preserves a Codex result status
-// derived from its leading banner. These fields let the streaming and buffered
+// input's short human-scannable summary. SubagentType retains an OpenCode child
+// role. IsError preserves a Codex result status derived from its leading banner. These fields let the streaming and buffered
 // paths build byte-identical sentinels.
 type BodyLocation struct {
-	Span     ValueSpan
-	Kind     BodyKind
-	Media    string
-	FilePath string
-	Detail   string
-	IsError  bool
+	Span         ValueSpan
+	Kind         BodyKind
+	Media        string
+	FilePath     string
+	Detail       string
+	IsError      bool
+	SubagentType string
 }
 
 // LocateToolBodies enumerates the tool input and result bodies in one transcript
